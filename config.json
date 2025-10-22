@@ -1,0 +1,36 @@
+{
+  "folders": [
+    {
+      "path": "",
+      "tracks": [
+        {
+          "filename": "",
+          "volume": 100
+        }
+      ]
+    }
+  ],
+  "filenameRules": [
+    {
+      "pattern": "_\\(Bass\\)$",
+      "name": "Bass"
+    },
+    {
+      "pattern": "_\\(Drums\\)$",
+      "name": "Drums"
+    },
+    {
+      "pattern": "_\\(Instrumental\\)$",
+      "name": "Instrumental"
+    },
+    {
+      "pattern": "_\\(Other\\)$",
+      "name": "Other"
+    },
+    {
+      "pattern": "_\\(Vocals\\)$",
+      "name": "Vocals"
+    }
+  ],
+  "skipSeconds": 5
+}
