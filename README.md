@@ -1,0 +1,2 @@
+# MultiTracksMusicApp
+可以同時播放多個音軌的播放器，UVR5、StemRoller音訊分離處理的相同檔名，不同樂器的音軌
