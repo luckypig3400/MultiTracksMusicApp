@@ -1,31 +1,29 @@
 // app.js
 
-// state
 let config = null;
-let tracks = [];           // 播放列表: 每首 { baseName, audioTracks: [{ filename, volume, blobUrl, relPath }] }
-let audioElements = [];    // 對應 audio 元件（同步播放）
+let tracks = [];
+let audioElements = [];
 let currentTrackIndex = 0;
 let skipSeconds = 5;
-let repeatMode = 0; // 0 off,1 single,2 list
+let repeatMode = 0; // 0 關閉, 1 單曲, 2 清單
 let isRandom = false;
 let updateLoopReq = null;
+let latestFiles = [];
 
-// util
 function normalizePath(p) {
   if (!p) return '';
   return p.replace(/\\/g, '/').replace(/\/+$/, '');
 }
 
-// ---------- Config ----------
 function readConfig() {
   const raw = localStorage.getItem('config');
   if (raw) {
     try {
       const cfg = JSON.parse(raw);
-      console.log("readConfig from localStorage:", cfg);
+      console.log("從 localStorage 讀取設定:", cfg);
       return cfg;
     } catch (e) {
-      console.error("readConfig parse error", e);
+      console.error("readConfig JSON 錯誤", e);
     }
   }
   return {
@@ -44,25 +42,23 @@ function readConfig() {
 function saveConfig() {
   try {
     localStorage.setItem('config', JSON.stringify(config));
-    console.log("config saved");
+    console.log("設定已儲存");
   } catch (e) {
-    console.error("saveConfig error", e);
+    console.error("saveConfig 錯誤", e);
   }
 }
 
-// ---------- Initialization ----------
 async function initializeApp() {
   console.log("initializeApp start");
   config = readConfig();
   skipSeconds = config.skipSeconds || 5;
-
   setUpUIEvents();
 
   if (!config.folders || config.folders.length === 0) {
-    console.log("no folders configured -> show folder chooser UI");
+    console.log("尚未設定資料夾 -> 顯示選擇介面");
     showFolderChooser(true);
   } else {
-    console.log("folders exist in config:", config.folders);
+    console.log("偵測到資料夾設定:", config.folders);
     await loadTracksFromConfig();
   }
   console.log("initializeApp done");
@@ -73,29 +69,24 @@ function setUpUIEvents() {
   const folderChooser = document.getElementById('folder-chooser');
   const folderOk = document.getElementById('folder-ok');
 
-  folderInput.addEventListener('change', (e) => {
-    handleFolderSelect(e.target.files);
-  });
+  folderInput.addEventListener('change', (e) => handleFolderSelect(e.target.files));
+  folderOk.addEventListener('click', () => folderChooser.style.display = 'none');
 
-  folderOk.addEventListener('click', () => {
-    folderChooser.style.display = 'none';
-  });
-
-  document.getElementById('btn-play').addEventListener('click', () => playPause());
-  document.getElementById('btn-next').addEventListener('click', () => nextTrack());
-  document.getElementById('btn-prev').addEventListener('click', () => previousTrack());
+  document.getElementById('btn-play').addEventListener('click', playPause);
+  document.getElementById('btn-next').addEventListener('click', nextTrack);
+  document.getElementById('btn-prev').addEventListener('click', previousTrack);
   document.getElementById('btn-random').addEventListener('click', () => {
     isRandom = !isRandom;
     document.getElementById('btn-random').innerText = isRandom ? "隨機：開" : "隨機：關";
   });
   document.getElementById('btn-repeat').addEventListener('click', () => {
     repeatMode = (repeatMode + 1) % 3;
-    const text = repeatMode === 0 ? "重複：關" : (repeatMode === 1 ? "重複：單首" : "重複：清單");
+    const text = repeatMode === 0 ? "重複：關" : (repeatMode === 1 ? "重複：單曲" : "重複：清單");
     document.getElementById('btn-repeat').innerText = text;
   });
 
-  const musicNameEl = document.getElementById('music-name');
-  musicNameEl.addEventListener('click', (e) => {
+  const nameEl = document.getElementById('music-name');
+  nameEl.addEventListener('click', (e) => {
     if (e.detail === 2) {
       const rect = e.target.getBoundingClientRect();
       const x = e.clientX - rect.left;
@@ -111,10 +102,10 @@ function showFolderChooser(show) {
   chooser.style.display = show ? 'block' : 'none';
 }
 
-// ---------- Handle folder selection ----------
 function handleFolderSelect(fileList) {
   if (!fileList || fileList.length === 0) return;
   const files = Array.from(fileList);
+  latestFiles = files;
   console.log("handleFolderSelect files:", files.length);
 
   const baseFolders = new Set();
@@ -131,12 +122,12 @@ function handleFolderSelect(fileList) {
     }
   });
 
+  updateBlobUrlsByRelPath(files);
   scanFiles(files);
   saveConfig();
   showFolderChooser(false);
 }
 
-// ---------- scan files ----------
 function scanFiles(files) {
   const validExt = ['mp3', 'wav', 'flac', 'm4a', 'aac', 'ogg'];
   const folderMaps = {};
@@ -150,8 +141,6 @@ function scanFiles(files) {
     if (!validExt.includes(ext)) return;
 
     const nameNoExt = name.substring(0, name.lastIndexOf('.')) || name;
-
-    // 這裡從尾巴往前比對音軌標籤
     let suffix = '';
     for (let rule of config.filenameRules) {
       const regex = new RegExp(rule.pattern);
@@ -160,11 +149,9 @@ function scanFiles(files) {
         break;
       }
     }
-
     const mainName = suffix ? nameNoExt.replace(new RegExp(`\\(${suffix}\\)$`), '').trim() : nameNoExt;
     const blobUrl = URL.createObjectURL(file);
     const entry = { filename: name, relPath, blobUrl, volume: 85, suffix };
-
     const folderKey = normalizePath(folder || '');
     if (!folderMaps[folderKey]) folderMaps[folderKey] = {};
     if (!folderMaps[folderKey][mainName]) folderMaps[folderKey][mainName] = [];
@@ -187,28 +174,29 @@ function scanFiles(files) {
     });
   });
 
-  console.log("scanFiles result:", config);
+  console.log("掃描完成:", config);
   generateTrackListFromConfig();
 }
 
-// ---------- 重新建立 blob url ----------
-function rebuildBlobUrlsFromConfig() {
+function updateBlobUrlsByRelPath(files) {
+  if (!config || !config.folders) return;
+  const fileMap = new Map();
+  files.forEach(f => {
+    const rel = (f.webkitRelativePath || f.name).replace(/\\/g, '/');
+    fileMap.set(rel, URL.createObjectURL(f));
+  });
   config.folders.forEach(folder => {
-    folder.tracks.forEach(track => {
-      track.audioTracks.forEach(at => {
-        if (!at.blobUrl && at.relPath) {
-          try {
-            at.blobUrl = at.relPath;
-          } catch (e) {
-            console.warn("rebuild blob url failed for", at.relPath);
-          }
+    folder.tracks?.forEach(track => {
+      track.audioTracks?.forEach(at => {
+        if (fileMap.has(at.relPath)) {
+          at.blobUrl = fileMap.get(at.relPath);
         }
       });
     });
   });
+  console.log("blobUrl 已依相對路徑更新");
 }
 
-// ---------- Generate playlist ----------
 function generateTrackListFromConfig() {
   tracks = [];
   audioElements = [];
@@ -218,22 +206,19 @@ function generateTrackListFromConfig() {
   folder.tracks.forEach(t => {
     tracks.push({ baseName: t.filename, audioTracks: t.audioTracks.map(at => ({ ...at })) });
   });
-  console.log("playlist generated, tracks:", tracks.length);
+  console.log("播放清單建立，共", tracks.length, "首");
   if (tracks.length > 0) {
     currentTrackIndex = 0;
     loadTrack(currentTrackIndex);
   }
 }
 
-// ---------- Load track ----------
 function loadTrack(index) {
   if (!tracks[index]) return;
   const track = tracks[index];
-  console.log("loadTrack:", track);
-
+  console.log("載入歌曲:", track);
   document.getElementById('music-name').innerText = track.baseName;
-
-  audioElements.forEach(a => { try { a.pause(); } catch (e) { } });
+  audioElements.forEach(a => { try { a.pause(); } catch { } });
   audioElements = [];
   const vc = document.getElementById('volume-controls');
   vc.innerHTML = '';
@@ -244,29 +229,24 @@ function loadTrack(index) {
     audio.preload = 'auto';
     audio.volume = (typeof at.volume === 'number') ? (at.volume / 100) : 0.85;
     audioElements.push(audio);
-
     const row = document.createElement('div');
     row.className = 'volume-track';
-
     const label = document.createElement('div');
     label.className = 'lbl';
-    label.innerText = at.suffix ? `(${at.suffix})` : '(Unknown)';
+    label.innerText = at.suffix ? `(${at.suffix})` : '(未知)';
     row.appendChild(label);
-
     const slider = document.createElement('input');
     slider.type = 'range';
     slider.min = 0; slider.max = 100;
     slider.value = at.volume ?? 85;
     slider.style.width = '85%';
     row.appendChild(slider);
-
     const num = document.createElement('input');
     num.type = 'number';
     num.min = 0; num.max = 100;
     num.value = at.volume ?? 85;
     num.style.width = '10%';
     row.appendChild(num);
-
     slider.addEventListener('input', () => {
       num.value = slider.value;
       audio.volume = slider.value / 100;
@@ -281,22 +261,30 @@ function loadTrack(index) {
       at.volume = v;
       persistVolumeSetting(track.baseName, at.filename, at.volume);
     });
-
     vc.appendChild(row);
   });
 
   if (audioElements[0]) {
     const first = audioElements[0];
-    const tryPlayAll = () => {
-      audioElements.forEach(a => a.play().catch(e => console.error("play error:", e)));
-      startProgressLoop();
-      first.removeEventListener('canplaythrough', tryPlayAll);
-    };
-    first.addEventListener('canplaythrough', tryPlayAll);
+    first.addEventListener('ended', onTrackEnd);
     first.play().then(() => {
       audioElements.forEach(a => { if (a !== first) a.play().catch(() => { }); });
       startProgressLoop();
-    }).catch(err => console.warn("first.play() failed", err));
+    }).catch(err => {
+      console.warn("播放失敗:", err);
+      alert("檔案無法播放或路徑已失效，請重新選擇資料夾以更新 blobUrl");
+      showFolderChooser(true);
+    });
+  }
+}
+
+function onTrackEnd() {
+  if (repeatMode === 1) {
+    loadTrack(currentTrackIndex);
+  } else if (repeatMode === 2) {
+    nextTrack();
+  } else if (currentTrackIndex < tracks.length - 1) {
+    nextTrack();
   }
 }
 
@@ -310,12 +298,11 @@ function persistVolumeSetting(baseName, filename, volume) {
     if (!at) return;
     at.volume = volume;
     saveConfig();
-  } catch (e) { console.error("persistVolumeSetting error", e); }
+  } catch (e) { console.error("persistVolumeSetting 錯誤", e); }
 }
 
-// ---------- Playback controls ----------
 function playPause() {
-  if (!audioElements || audioElements.length === 0) return;
+  if (!audioElements.length) return;
   const first = audioElements[0];
   if (first.paused) {
     audioElements.forEach(a => a.play().catch(e => console.warn("play error", e)));
@@ -331,14 +318,15 @@ function nextTrack() {
   currentTrackIndex = isRandom ? Math.floor(Math.random() * tracks.length) : (currentTrackIndex + 1) % tracks.length;
   loadTrack(currentTrackIndex);
 }
+
 function previousTrack() {
   if (!tracks.length) return;
   currentTrackIndex = isRandom ? Math.floor(Math.random() * tracks.length) : (currentTrackIndex - 1 + tracks.length) % tracks.length;
   loadTrack(currentTrackIndex);
 }
 
-function seekForward() { audioElements.forEach(a => { a.currentTime = Math.min(a.duration || 0, a.currentTime + skipSeconds); }); }
-function seekBackward() { audioElements.forEach(a => { a.currentTime = Math.max(0, a.currentTime - skipSeconds); }); }
+function seekForward() { audioElements.forEach(a => a.currentTime = Math.min(a.duration || 0, a.currentTime + skipSeconds)); }
+function seekBackward() { audioElements.forEach(a => a.currentTime = Math.max(0, a.currentTime - skipSeconds)); }
 
 function onProgressChange(e) {
   if (!audioElements.length) return;
@@ -370,16 +358,13 @@ function formatTime(sec) {
   return `${m}:${s < 10 ? '0' + s : s}`;
 }
 
-// ---------- 兼容函式 ----------
 async function loadTracksFromConfig() {
   console.log("loadTracksFromConfig called");
   if (!config || !config.folders || config.folders.length === 0) {
     showFolderChooser(true);
     return;
   }
-  rebuildBlobUrlsFromConfig();
   generateTrackListFromConfig();
 }
 
-// ---------- Start ----------
 initializeApp();
