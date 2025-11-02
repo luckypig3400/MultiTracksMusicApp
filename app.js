@@ -72,6 +72,9 @@ function setUpUIEvents() {
   folderInput.addEventListener('change', (e) => handleFolderSelect(e.target.files));
   folderOk.addEventListener('click', () => folderChooser.style.display = 'none');
 
+  document.getElementById('btn-settings').addEventListener('click', () => {
+    window.location.href = 'setting.html';
+  });
   document.getElementById('btn-play').addEventListener('click', playPause);
   document.getElementById('btn-next').addEventListener('click', nextTrack);
   document.getElementById('btn-prev').addEventListener('click', previousTrack);
