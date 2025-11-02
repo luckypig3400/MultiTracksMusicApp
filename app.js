@@ -5,7 +5,7 @@ let tracks = [];
 let audioElements = [];
 let currentTrackIndex = 0;
 let skipSeconds = 5;
-let repeatMode = 0; // 0 關閉, 1 單曲, 2 清單
+let repeatMode = 0;
 let isRandom = false;
 let updateLoopReq = null;
 let latestFiles = [];
@@ -150,8 +150,21 @@ function scanFiles(files) {
       }
     }
     const mainName = suffix ? nameNoExt.replace(new RegExp(`\\(${suffix}\\)$`), '').trim() : nameNoExt;
+
+    // 檢查是否已存在相同相對路徑，沿用舊 volume
+    let oldVolume = 85;
+    for (let folderCfg of config.folders) {
+      for (let track of folderCfg.tracks || []) {
+        const match = track.audioTracks?.find(a => a.relPath === relPath);
+        if (match) {
+          oldVolume = match.volume ?? 85;
+          break;
+        }
+      }
+    }
+
     const blobUrl = URL.createObjectURL(file);
-    const entry = { filename: name, relPath, blobUrl, volume: 85, suffix };
+    const entry = { filename: name, relPath, blobUrl, volume: oldVolume, suffix };
     const folderKey = normalizePath(folder || '');
     if (!folderMaps[folderKey]) folderMaps[folderKey] = {};
     if (!folderMaps[folderKey][mainName]) folderMaps[folderKey][mainName] = [];
@@ -174,7 +187,7 @@ function scanFiles(files) {
     });
   });
 
-  console.log("掃描完成:", config);
+  console.log("掃描完成，保留舊音量:", config);
   generateTrackListFromConfig();
 }
 
