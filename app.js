@@ -157,20 +157,22 @@ function scanFiles(files) {
     }
     const mainName = suffix ? nameNoExt.replace(new RegExp(`\\(${suffix}\\)$`), '').trim() : nameNoExt;
 
-    // 檢查是否已存在相同相對路徑，沿用舊 volume
+    // 檢查是否已存在相同相對路徑，沿用舊 volume 與 mute 設定
     let oldVolume = 85;
+    let oldMute = false;
     for (let folderCfg of config.folders) {
       for (let track of folderCfg.tracks || []) {
         const match = track.audioTracks?.find(a => a.relPath === relPath);
         if (match) {
           oldVolume = match.volume ?? 85;
+          oldMute = match.mute ?? false;
           break;
         }
       }
     }
 
     const blobUrl = URL.createObjectURL(file);
-    const entry = { filename: name, relPath, blobUrl, volume: oldVolume, suffix };
+    const entry = { filename: name, relPath, blobUrl, volume: oldVolume, mute: oldMute, suffix };
     const folderKey = normalizePath(folder || '');
     if (!folderMaps[folderKey]) folderMaps[folderKey] = {};
     if (!folderMaps[folderKey][mainName]) folderMaps[folderKey][mainName] = [];
@@ -187,6 +189,7 @@ function scanFiles(files) {
         relPath: t.relPath,
         blobUrl: t.blobUrl,
         volume: t.volume,
+        mute: t.mute || false,
         suffix: t.suffix
       }));
       folderCfg.tracks.push({ filename: mainName, audioTracks });
@@ -242,33 +245,48 @@ function loadTrack(index) {
   const vc = document.getElementById('volume-controls');
   vc.innerHTML = '';
 
-  track.audioTracks.forEach(at => {
+  track.audioTracks.forEach((at, idx) => {
     const audio = new Audio();
-    audio.src = at.blobUrl || at.relPath;
+    audio.src = at.blobUrl || at.relPath; // blobUrl 優先，否則嘗試相對路徑
     audio.preload = 'auto';
-    audio.volume = (typeof at.volume === 'number') ? (at.volume / 100) : 0.85;
+    // 若已經設定 mute，則暫時把音量設為 0，但保留 at.volume 作為保存值
+    audio.volume = (at.mute ? 0 : ((typeof at.volume === 'number') ? (at.volume / 100) : 0.85));
     audioElements.push(audio);
+
     const row = document.createElement('div');
     row.className = 'volume-track';
+
     const label = document.createElement('div');
     label.className = 'lbl';
     label.innerText = at.suffix ? `(${at.suffix})` : '(未知)';
+    // 點擊標籤切換靜音/還原
+    label.style.cursor = 'pointer';
+    label.addEventListener('click', () => {
+      toggleMuteForTrack(idx);
+    });
     row.appendChild(label);
+
     const slider = document.createElement('input');
     slider.type = 'range';
     slider.min = 0; slider.max = 100;
-    slider.value = at.volume ?? 85;
+    // 顯示的 slider 值如果是靜音就顯示 0，否則顯示保存的音量
+    slider.value = at.mute ? 0 : (at.volume ?? 85);
     slider.style.width = '85%';
     row.appendChild(slider);
+
     const num = document.createElement('input');
     num.type = 'number';
     num.min = 0; num.max = 100;
-    num.value = at.volume ?? 85;
+    num.value = at.mute ? 0 : (at.volume ?? 85);
     num.style.width = '10%';
     row.appendChild(num);
+
+    // 綁定 slider 與數字輸入更新
     slider.addEventListener('input', () => {
       num.value = slider.value;
       audio.volume = slider.value / 100;
+      // 當 user 手動改變 slider 時視為取消靜音
+      at.mute = false;
       at.volume = parseInt(slider.value);
       persistVolumeSetting(track.baseName, at.filename, at.volume);
     });
@@ -277,10 +295,15 @@ function loadTrack(index) {
       v = Math.min(100, Math.max(0, v));
       num.value = v; slider.value = v;
       audio.volume = v / 100;
+      at.mute = false;
       at.volume = v;
       persistVolumeSetting(track.baseName, at.filename, at.volume);
     });
+
     vc.appendChild(row);
+
+    // 把 UI 元件綁進 at 以便 mute 切換時操作
+    at._ui = { slider, num, label, audio }; // 非序列化屬性
   });
 
   if (audioElements[0]) {
@@ -326,6 +349,38 @@ function loadTrack(index) {
   }
 }
 
+function toggleMuteForTrack(idx) {
+  // 切換指定音軌的靜音狀態，並更新 UI 與 config
+  const track = tracks[currentTrackIndex];
+  if (!track) return;
+  const at = track.audioTracks[idx];
+  if (!at) return;
+  const ui = at._ui;
+  if (!ui) return;
+
+  if (!at.mute) {
+    // 進入靜音: 保留原始音量在 at.volume，將播放音量設定為 0
+    at.mute = true;
+    ui.audio.volume = 0;
+    ui.slider.value = 0;
+    ui.num.value = 0;
+    ui.label.style.opacity = '0.6';
+    console.log(`已將 ${at.filename} 靜音`);
+  } else {
+    // 取消靜音: 還原到保存的音量
+    at.mute = false;
+    const restored = at.volume ?? 85;
+    ui.audio.volume = restored / 100;
+    ui.slider.value = restored;
+    ui.num.value = restored;
+    ui.label.style.opacity = '1';
+    console.log(`已還原 ${at.filename} 音量為 ${restored}`);
+  }
+
+  // 儲存設定
+  saveConfig();
+}
+
 function onTrackEnd() {
   if (repeatMode === 1) {
     // 單曲重複重新載入並播放
@@ -346,6 +401,8 @@ function persistVolumeSetting(baseName, filename, volume) {
     const at = tr.audioTracks.find(a => a.filename === filename);
     if (!at) return;
     at.volume = volume;
+    // 手動改變音量視為取消靜音
+    at.mute = false;
     saveConfig();
   } catch (e) { console.error("persistVolumeSetting 錯誤", e); }
 }
