@@ -91,6 +91,9 @@
   #folder-chooser p { margin:0 0 8px 0; }
   #folder-chooser input[type=file] { width:100%; }
 
+  /* 小的閃爍樣式（透過 JS 切換背景顏色） */
+  .progress-flash { background-color: rgba(255,0,0,0.6) !important; transition: background-color 0.1s; }
+
   /* small helper */
   .hidden { display:none !important; }
 </style>
@@ -106,7 +109,7 @@
     </div>
 
     <div id="controls">
-      <button id="btn-settings">設定</button> <!-- 新增 -->
+      <button id="btn-settings">設定</button>
       <button id="btn-random">隨機：關</button>
       <button id="btn-prev">上一首</button>
       <button id="btn-play">播放</button>
@@ -120,7 +123,6 @@
 
     <div id="folder-chooser" role="dialog" aria-modal="true">
       <p>首次使用請選擇一或多個音樂資料夾（會掃描資料夾內音訊檔案）</p>
-      <!-- 使用者可見的 folder input（不要自動 click） -->
       <input type="file" id="folder-input" webkitdirectory directory multiple />
       <div style="margin-top:8px; text-align:right;">
         <button id="folder-ok">關閉</button>

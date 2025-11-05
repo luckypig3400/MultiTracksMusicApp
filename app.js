@@ -10,6 +10,10 @@ let isRandom = false;
 let updateLoopReq = null;
 let latestFiles = [];
 
+// 用來管理同步檢查的 timer
+let syncIntervalId = null;
+let initialSyncTimeoutId = null;
+
 function normalizePath(p) {
   if (!p) return '';
   return p.replace(/\\/g, '/').replace(/\/+$/, '');
@@ -72,9 +76,8 @@ function setUpUIEvents() {
   folderInput.addEventListener('change', (e) => handleFolderSelect(e.target.files));
   folderOk.addEventListener('click', () => folderChooser.style.display = 'none');
 
-  document.getElementById('btn-settings').addEventListener('click', () => {
-    window.location.href = 'setting.html';
-  });
+  const btnSettings = document.getElementById('btn-settings');
+  if (btnSettings) btnSettings.addEventListener('click', () => window.location.href = 'setting.html');
   document.getElementById('btn-play').addEventListener('click', playPause);
   document.getElementById('btn-next').addEventListener('click', nextTrack);
   document.getElementById('btn-prev').addEventListener('click', previousTrack);
@@ -283,19 +286,49 @@ function loadTrack(index) {
   if (audioElements[0]) {
     const first = audioElements[0];
     first.addEventListener('ended', onTrackEnd);
+
+    // 當開始播放時先延遲 200ms 再檢查同步
+    const startPlay = () => {
+      // 清除舊 timers
+      if (initialSyncTimeoutId) clearTimeout(initialSyncTimeoutId);
+      if (syncIntervalId) clearInterval(syncIntervalId);
+
+      initialSyncTimeoutId = setTimeout(() => {
+        syncCheckAndFix();
+        // 每 3 秒檢查一次
+        syncIntervalId = setInterval(() => {
+          if (!audioElements.length) return;
+          // 只在播放中檢查
+          if (audioElements[0].paused) return;
+          syncCheckAndFix();
+        }, 3000);
+      }, 200);
+    };
+
+    // 在 canplaythrough 或 user play 事件後都呼叫 startPlay
+    first.addEventListener('canplaythrough', startPlay, { once: true });
+
     first.play().then(() => {
-      audioElements.forEach(a => { if (a !== first) a.play().catch(() => { }); });
+      audioElements.forEach((a, i) => { if (a !== first) a.play().catch(() => { }); });
       startProgressLoop();
+      startPlay();
     }).catch(err => {
       console.warn("播放失敗:", err);
       alert("檔案無法播放或路徑已失效，請重新選擇資料夾以更新 blobUrl");
       showFolderChooser(true);
+    });
+
+    // 當暫停時停止定時器
+    first.addEventListener('pause', () => {
+      if (syncIntervalId) { clearInterval(syncIntervalId); syncIntervalId = null; }
+      if (initialSyncTimeoutId) { clearTimeout(initialSyncTimeoutId); initialSyncTimeoutId = null; }
     });
   }
 }
 
 function onTrackEnd() {
   if (repeatMode === 1) {
+    // 單曲重複重新載入並播放
     loadTrack(currentTrackIndex);
   } else if (repeatMode === 2) {
     nextTrack();
@@ -323,9 +356,14 @@ function playPause() {
   if (first.paused) {
     audioElements.forEach(a => a.play().catch(e => console.warn("play error", e)));
     document.getElementById('btn-play').innerText = "暫停";
+    // 使用者手動播放也要啟動同步檢查
+    if (initialSyncTimeoutId) clearTimeout(initialSyncTimeoutId);
+    initialSyncTimeoutId = setTimeout(() => { syncCheckAndFix(); syncIntervalId = setInterval(() => { if (!audioElements[0].paused) syncCheckAndFix(); }, 5000); }, 200);
   } else {
     audioElements.forEach(a => a.pause());
     document.getElementById('btn-play').innerText = "播放";
+    if (syncIntervalId) { clearInterval(syncIntervalId); syncIntervalId = null; }
+    if (initialSyncTimeoutId) { clearTimeout(initialSyncTimeoutId); initialSyncTimeoutId = null; }
   }
 }
 
@@ -334,7 +372,6 @@ function nextTrack() {
   currentTrackIndex = isRandom ? Math.floor(Math.random() * tracks.length) : (currentTrackIndex + 1) % tracks.length;
   loadTrack(currentTrackIndex);
 }
-
 function previousTrack() {
   if (!tracks.length) return;
   currentTrackIndex = isRandom ? Math.floor(Math.random() * tracks.length) : (currentTrackIndex - 1 + tracks.length) % tracks.length;
@@ -372,6 +409,84 @@ function formatTime(sec) {
   const m = Math.floor(sec / 60);
   const s = Math.floor(sec % 60);
   return `${m}:${s < 10 ? '0' + s : s}`;
+}
+
+function formatTimeMs(ms) {
+  // 輸出 mi:ss:ms 三位數毫秒
+  const totalMs = Math.round(ms);
+  const minutes = Math.floor(totalMs / 60000);
+  const seconds = Math.floor((totalMs % 60000) / 1000);
+  const millis = totalMs % 1000;
+  return `${minutes}:${seconds < 10 ? '0' + seconds : seconds}:${millis.toString().padStart(3, '0')}`;
+}
+
+// 同步檢查與修正
+function syncCheckAndFix() {
+  if (!audioElements.length) return;
+  // 取得所有時間（毫秒）
+  const timesMs = audioElements.map(a => Math.round((a.currentTime || 0) * 1000));
+  // 找出最多音軌的時間 (頻率最高)
+  const freq = {};
+  timesMs.forEach(t => freq[t] = (freq[t] || 0) + 1);
+  let mostCommonTime = null; let mostCount = 0;
+  for (const k in freq) {
+    if (freq[k] > mostCount) { mostCount = freq[k]; mostCommonTime = parseInt(k); }
+  }
+  // 決定基準時間 如果有多個不同時間且多於1個不同值 以 Vocals 為準
+  const uniqueTimes = Object.keys(freq).length;
+  let refTime = mostCommonTime;
+  if (uniqueTimes > 1) {
+    // 嘗試找 Vocals
+    const vocalsIndex = tracks[currentTrackIndex]?.audioTracks?.findIndex(at => at.suffix === 'Vocals');
+    if (vocalsIndex != null && vocalsIndex >= 0 && vocalsIndex < audioElements.length) {
+      refTime = Math.round((audioElements[vocalsIndex].currentTime || 0) * 1000);
+    }
+  }
+
+  // 檢查每個音軌是否偏離超過容忍值
+  const toleranceMs = 10; // 使用者要求約 10ms
+  const diffs = timesMs.map(t => t - refTime);
+  const needAdjust = diffs.some(d => Math.abs(d) > toleranceMs);
+  if (!needAdjust) return;
+
+  // 記錄調整前時間
+  const before = audioElements.map((a, i) => ({ label: tracks[currentTrackIndex]?.audioTracks?.[i]?.suffix || a.src || i, timeMs: timesMs[i] }));
+
+  // 若有多個時間不一致 且有 Vocals，則以 Vocals 為準，否則以 mostCommonTime
+  const finalRef = refTime;
+
+  // 執行調整
+  audioElements.forEach((a, i) => {
+    const curMs = Math.round((a.currentTime || 0) * 1000);
+    if (Math.abs(curMs - finalRef) > toleranceMs) {
+      try {
+        a.currentTime = finalRef / 1000;
+      } catch (e) {
+        console.warn('調整時間失敗', e);
+      }
+    }
+  });
+
+  // 記錄調整後時間
+  const afterMs = audioElements.map(a => Math.round((a.currentTime || 0) * 1000));
+  const after = audioElements.map((a, i) => ({ label: tracks[currentTrackIndex]?.audioTracks?.[i]?.suffix || a.src || i, timeMs: afterMs[i] }));
+
+  // 顯示 console 訊息
+  console.log('已調整音軌, 調整前', before.map(b => `${b.label} ${formatTimeMs(b.timeMs)}`).join(', '), '調整後', after.map(b => `${b.label} ${formatTimeMs(b.timeMs)}`).join(', '));
+
+  // 閃爍進度條
+  flashProgressBar();
+}
+
+function flashProgressBar() {
+  const p = document.getElementById('progress');
+  if (!p) return;
+  const original = p.style.backgroundColor || '';
+  p.style.transition = 'background-color 0.1s';
+  p.style.backgroundColor = 'rgba(255,0,0,0.6)';
+  setTimeout(() => {
+    p.style.backgroundColor = original;
+  }, 300);
 }
 
 async function loadTracksFromConfig() {
