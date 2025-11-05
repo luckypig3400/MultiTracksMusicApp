@@ -13,10 +13,12 @@ let latestFiles = [];
 // 用來管理同步檢查的 timer
 let syncIntervalId = null;
 let initialSyncTimeoutId = null;
+// 記錄上次自動同步調整的時間（避免連續重複調整）
+let lastSyncAdjustTimestamp = 0;
 
 function normalizePath(p) {
   if (!p) return '';
-  return p.replace(/\\/g, '/').replace(/\/+$/, '');
+  return p.replace(/\\/g, '/').replace(/\/+/g, '/').replace(/\/+$/, '');
 }
 
 function readConfig() {
@@ -480,6 +482,12 @@ function formatTimeMs(ms) {
 // 同步檢查與修正
 function syncCheckAndFix() {
   if (!audioElements.length) return;
+  // 若剛剛才調整過，短時間內不再調整，避免來回震盪
+  const now = Date.now();
+  if (now - lastSyncAdjustTimestamp < 600) {
+    //console.log('skip sync because recent adjust');
+    return;
+  }
   // 取得所有時間（毫秒）
   const timesMs = audioElements.map(a => Math.round((a.currentTime || 0) * 1000));
   // 找出最多音軌的時間 (頻率最高)
@@ -501,7 +509,7 @@ function syncCheckAndFix() {
   }
 
   // 檢查每個音軌是否偏離超過容忍值
-  const toleranceMs = 10; // 使用者要求約 10ms
+  const toleranceMs = 15; // 放寬到 15ms，減少頻繁微調
   const diffs = timesMs.map(t => t - refTime);
   const needAdjust = diffs.some(d => Math.abs(d) > toleranceMs);
   if (!needAdjust) return;
@@ -524,25 +532,34 @@ function syncCheckAndFix() {
     }
   });
 
-  // 記錄調整後時間
-  const afterMs = audioElements.map(a => Math.round((a.currentTime || 0) * 1000));
-  const after = audioElements.map((a, i) => ({ label: tracks[currentTrackIndex]?.audioTracks?.[i]?.suffix || a.src || i, timeMs: afterMs[i] }));
+  // 更新上次調整時間，避免短時間內再度調整
+  lastSyncAdjustTimestamp = Date.now();
 
-  // 顯示 console 訊息
-  console.log('已調整音軌, 調整前', before.map(b => `${b.label} ${formatTimeMs(b.timeMs)}`).join(', '), '調整後', after.map(b => `${b.label} ${formatTimeMs(b.timeMs)}`).join(', '));
+  // 記錄調整後時間（稍後取樣以免立刻讀到未同步的值）
+  setTimeout(() => {
+    const afterMs = audioElements.map(a => Math.round((a.currentTime || 0) * 1000));
+    const after = audioElements.map((a, i) => ({ label: tracks[currentTrackIndex]?.audioTracks?.[i]?.suffix || a.src || i, timeMs: afterMs[i] }));
 
-  // 閃爍進度條
-  flashProgressBar();
+    // 顯示 console 訊息
+    console.log('已調整音軌, 調整前', before.map(b => `${b.label} ${formatTimeMs(b.timeMs)}`).join(', '), '調整後', after.map(b => `${b.label} ${formatTimeMs(b.timeMs)}`).join(', '));
+
+    // 閃爍進度條
+    flashProgressBar();
+  }, 80); // 等 80ms 再讀取一次時間以取得穩定值
 }
 
 function flashProgressBar() {
   const p = document.getElementById('progress');
   if (!p) return;
-  const original = p.style.backgroundColor || '';
-  p.style.transition = 'background-color 0.1s';
-  p.style.backgroundColor = 'rgba(255,0,0,0.6)';
+  // 使用 boxShadow 與 background 快速顯示變化（比改變 input background 更可靠）
+  const originalBox = p.style.boxShadow || '';
+  const originalBg = p.style.backgroundColor || '';
+  p.style.transition = 'box-shadow 0.06s, background-color 0.06s';
+  p.style.boxShadow = '0 0 8px rgba(255,0,0,0.9)';
+  p.style.backgroundColor = 'rgba(255,0,0,0.15)';
   setTimeout(() => {
-    p.style.backgroundColor = original;
+    p.style.boxShadow = originalBox;
+    p.style.backgroundColor = originalBg;
   }, 300);
 }
 
