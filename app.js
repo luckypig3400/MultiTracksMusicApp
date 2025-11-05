@@ -479,16 +479,13 @@ function formatTimeMs(ms) {
   return `${minutes}:${seconds < 10 ? '0' + seconds : seconds}:${millis.toString().padStart(3, '0')}`;
 }
 
-// 同步檢查與修正
+// 同步檢查與修正 (修正版：改為全部音軌一起同步)
 function syncCheckAndFix() {
   if (!audioElements.length) return;
   // 若剛剛才調整過，短時間內不再調整，避免來回震盪
   const now = Date.now();
-  if (now - lastSyncAdjustTimestamp < 600) {
-    //console.log('skip sync because recent adjust');
-    return;
-  }
-  // 取得所有時間（毫秒）
+  if (now - lastSyncAdjustTimestamp < 600) return;
+
   const timesMs = audioElements.map(a => Math.round((a.currentTime || 0) * 1000));
   // 找出最多音軌的時間 (頻率最高)
   const freq = {};
@@ -519,16 +516,12 @@ function syncCheckAndFix() {
 
   // 若有多個時間不一致 且有 Vocals，則以 Vocals 為準，否則以 mostCommonTime
   const finalRef = refTime;
-
-  // 執行調整
-  audioElements.forEach((a, i) => {
-    const curMs = Math.round((a.currentTime || 0) * 1000);
-    if (Math.abs(curMs - finalRef) > toleranceMs) {
-      try {
-        a.currentTime = finalRef / 1000;
-      } catch (e) {
-        console.warn('調整時間失敗', e);
-      }
+  // 這次修改：同步時所有音軌（包括 Vocals）都對齊同一 refTime
+  audioElements.forEach(a => {
+    try {
+      a.currentTime = finalRef / 1000;
+    } catch (e) {
+      console.warn('調整時間失敗', e);
     }
   });
 
@@ -540,7 +533,6 @@ function syncCheckAndFix() {
     const afterMs = audioElements.map(a => Math.round((a.currentTime || 0) * 1000));
     const after = audioElements.map((a, i) => ({ label: tracks[currentTrackIndex]?.audioTracks?.[i]?.suffix || a.src || i, timeMs: afterMs[i] }));
 
-    // 顯示 console 訊息
     console.log('已調整音軌, 調整前', before.map(b => `${b.label} ${formatTimeMs(b.timeMs)}`).join(', '), '調整後', after.map(b => `${b.label} ${formatTimeMs(b.timeMs)}`).join(', '));
 
     // 閃爍進度條
