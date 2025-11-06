@@ -20,7 +20,6 @@
     font-size:1.4rem;
     user-select:none;
     cursor:pointer;
-    background: linear-gradient(180deg, #ffffff, #f2f2f2);
     border-bottom:1px solid #e0e0e0;
     padding:12px;
     box-sizing:border-box;
@@ -133,5 +132,12 @@
   </div>
 
   <script src="app.js"></script>
+  <script src="setting.js"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      ThemeManager.loadAndApplyTheme(); // 自動套用已儲存的主題設定
+    });
+  </script>
+
 </body>
 </html>
