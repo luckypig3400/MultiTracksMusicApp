@@ -43,11 +43,31 @@ const ThemeManager = (() => {
     const current = localStorage.getItem('appTheme') || 'light';
     const next = current === 'light' ? 'dark' : 'light';
     localStorage.setItem('appTheme', next);
+
+    // 同步更新 config 中的主題設定
+    try {
+      const raw = localStorage.getItem('config');
+      const cfg = raw ? JSON.parse(raw) : {};
+      cfg.appTheme = next;
+      localStorage.setItem('config', JSON.stringify(cfg));
+    } catch (e) {
+      console.warn('更新 config.appTheme 時發生錯誤', e);
+    }
+
     applyTheme(next, btnTheme);
   }
 
   function loadAndApplyTheme(btnTheme = null) {
-    const savedTheme = localStorage.getItem('appTheme') || 'light';
+    // 優先讀取 config.appTheme，若無則使用 localStorage.appTheme
+    let savedTheme = 'light';
+    try {
+      const raw = localStorage.getItem('config');
+      const cfg = raw ? JSON.parse(raw) : {};
+      savedTheme = cfg.appTheme || localStorage.getItem('appTheme') || 'light';
+    } catch {
+      savedTheme = localStorage.getItem('appTheme') || 'light';
+    }
+    localStorage.setItem('appTheme', savedTheme);
     applyTheme(savedTheme, btnTheme);
   }
 
@@ -71,7 +91,13 @@ document.addEventListener('DOMContentLoaded', () => {
   function loadConfig() {
     const raw = localStorage.getItem('config') || '{}';
     try {
-      textarea.value = JSON.stringify(JSON.parse(raw), null, 2);
+      const cfg = JSON.parse(raw);
+      // 確保 config 內包含 appTheme
+      if (!cfg.appTheme) {
+        cfg.appTheme = localStorage.getItem('appTheme') || 'light';
+        localStorage.setItem('config', JSON.stringify(cfg));
+      }
+      textarea.value = JSON.stringify(cfg, null, 2);
     } catch (e) {
       textarea.value = raw;
     }
@@ -90,13 +116,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // 儲存成檔案
   if (btnSave) btnSave.addEventListener('click', () => {
-    const blob = new Blob([textarea.value], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'config_MultiTracksMusicApp.json';
-    a.click();
-    URL.revokeObjectURL(url);
+    try {
+      const cfg = JSON.parse(localStorage.getItem('config') || '{}');
+      // 確保導出時包含 appTheme
+      cfg.appTheme = localStorage.getItem('appTheme') || cfg.appTheme || 'light';
+      const blob = new Blob([JSON.stringify(cfg, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'config_MultiTracksMusicApp.json';
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      alert('匯出設定時發生錯誤');
+    }
   });
 
   // 載入自檔案
@@ -109,8 +142,10 @@ document.addEventListener('DOMContentLoaded', () => {
     reader.onload = evt => {
       try {
         const obj = JSON.parse(evt.target.result);
+        if (obj.appTheme) localStorage.setItem('appTheme', obj.appTheme);
         localStorage.setItem('config', JSON.stringify(obj));
         loadConfig();
+        ThemeManager.loadAndApplyTheme(btnTheme);
         alert('設定已載入並儲存到 localStorage');
       } catch (err) {
         alert('檔案內容不是有效 JSON');
@@ -123,6 +158,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (btnClear) btnClear.addEventListener('click', () => {
     if (confirm('確定要清除設定嗎？')) {
       localStorage.removeItem('config');
+      localStorage.removeItem('appTheme');
       loadConfig();
     }
   });
