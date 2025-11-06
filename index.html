@@ -4,6 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>多音軌音樂播放器</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.1/css/all.min.css">>
 <style>
   :root { font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans"; }
   html,body { height:100%; margin:0; background:#fafafa; color:#111; }
@@ -109,13 +110,17 @@
     </div>
 
     <div id="controls">
-      <button id="btn-settings">設定</button>
-      <button id="btn-random">隨機：關</button>
-      <button id="btn-prev">上一首</button>
-      <button id="btn-play">播放</button>
-      <button id="btn-next">下一首</button>
-      <button id="btn-repeat">重複：關</button>
+      <button id="btn-playlist" title="播放清單"><i class="fa-solid fa-list-ul"></i></button>
+      <button id="btn-random" title="隨機"><i class="fa-solid fa-shuffle"></i></button>
+      <button id="btn-prev" title="上一首"><i class="fa-solid fa-backward-step"></i></button>
+      <button id="btn-play" title="播放"><i class="fa-solid fa-pause"></i></button>
+      <button id="btn-next" title="下一首"><i class="fa-solid fa-forward-step"></i></button>
+      <button id="btn-repeat" title="重複"><i class="fa-solid fa-repeat"></i></button>
+      <button id="btn-settings" title="設定"><i class="fa-solid fa-gear"></i></button>
     </div>
+
+    
+<i class="fa-regular fa-money-bill-1"></i><!-- 用來當作repeat one-->
 
     <div id="volume-controls">
       <!-- 動態產生音軌控制 -->

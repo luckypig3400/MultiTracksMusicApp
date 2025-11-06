@@ -85,12 +85,12 @@ function setUpUIEvents() {
   document.getElementById('btn-prev').addEventListener('click', previousTrack);
   document.getElementById('btn-random').addEventListener('click', () => {
     isRandom = !isRandom;
-    document.getElementById('btn-random').innerText = isRandom ? "隨機：開" : "隨機：關";
+    document.getElementById('btn-random').innerHTML = isRandom ? '<i class="fa-solid fa-shuffle" style="color: gold;">' : '<i class="fa-solid fa-shuffle">';// on/off
   });
   document.getElementById('btn-repeat').addEventListener('click', () => {
     repeatMode = (repeatMode + 1) % 3;
-    const text = repeatMode === 0 ? "重複：關" : (repeatMode === 1 ? "重複：單曲" : "重複：清單");
-    document.getElementById('btn-repeat').innerText = text;
+    const text = repeatMode === 0 ? '<i class="fa-solid fa-repeat"></i>' : (repeatMode === 1 ? '<i class="fa-solid fa-repeat" style="color: gold;">&nbsp;1</i>' : '<i class="fa-solid fa-repeat" style="color: gold;">A</i>'); // 重複：關/單曲/清單
+    document.getElementById('btn-repeat').innerHTML = text;
   });
 
   const nameEl = document.getElementById('music-name');
@@ -414,13 +414,13 @@ function playPause() {
   const first = audioElements[0];
   if (first.paused) {
     audioElements.forEach(a => a.play().catch(e => console.warn("play error", e)));
-    document.getElementById('btn-play').innerText = "暫停";
+    document.getElementById('btn-play').innerHTML = '<i class="fa-solid fa-pause"></i>';
     // 使用者手動播放也要啟動同步檢查
     if (initialSyncTimeoutId) clearTimeout(initialSyncTimeoutId);
     initialSyncTimeoutId = setTimeout(() => { syncCheckAndFix(); syncIntervalId = setInterval(() => { if (!audioElements[0].paused) syncCheckAndFix(); }, 5000); }, 200);
   } else {
     audioElements.forEach(a => a.pause());
-    document.getElementById('btn-play').innerText = "播放";
+    document.getElementById('btn-play').innerHTML = '<i class="fa-solid fa-play"></i>';
     if (syncIntervalId) { clearInterval(syncIntervalId); syncIntervalId = null; }
     if (initialSyncTimeoutId) { clearTimeout(initialSyncTimeoutId); initialSyncTimeoutId = null; }
   }
