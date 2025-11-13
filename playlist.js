@@ -1,17 +1,62 @@
-// playlist.js — 使用 localStorage 直接讀取與編輯播放清單排序，移除等待機制
-// 依賴全域變數 / 函式：saveConfig(), config
+// playlist.js — 改良：使用 module state (currentTracks) 立刻反映 UI，所有操作直接修改 currentTracks 並寫回 localStorage
+// 提供清晰 log：例如 [Playlist] "歌曲名稱" 排序從 9 變成 12
+// 依賴全域函式/變數：saveConfig(), config, window.tracks (optional), loadTrack(), currentTrackIndex
 
 (function () {
   let modal = null;
   let sortAsc = true;
+  let currentTracks = []; // module state for UI
 
-  function log(...args) { console.log('[Playlist]', ...args); }
+  function log(...args) { console.log.apply(console, ['[Playlist]'].concat(args)); }
+
+  function loadTracksFromStorageToState() {
+    try {
+      const stored = localStorage.getItem('config');
+      if (!stored) {
+        currentTracks = [];
+        return currentTracks;
+      }
+      const cfg = JSON.parse(stored);
+      if (cfg.folders && cfg.folders.length > 0) {
+        // use the first folder as the playlist source (matches app behavior)
+        const folderTracks = cfg.folders[0].tracks || [];
+        currentTracks = folderTracks.map(t => ({
+          filename: t.filename,
+          baseName: t.filename,
+          audioTracks: t.audioTracks || []
+        }));
+        log('Loaded', currentTracks.length, 'tracks into currentTracks');
+        return currentTracks;
+      }
+    } catch (e) {
+      console.warn('loadTracksFromStorageToState error', e);
+      currentTracks = [];
+    }
+    return currentTracks;
+  }
+
+  function persistTracksToStorage(tracks) {
+    try {
+      const cfgRaw = localStorage.getItem('config');
+      const cfg = cfgRaw ? JSON.parse(cfgRaw) : { folders: [] };
+      if (!cfg.folders || cfg.folders.length === 0) {
+        cfg.folders = [{ path: 'Unknown', tracks: [] }];
+      }
+      cfg.folders[0].tracks = tracks.map(t => ({ filename: t.baseName, audioTracks: t.audioTracks }));
+      localStorage.setItem('config', JSON.stringify(cfg));
+      if (typeof saveConfig === 'function') saveConfig();
+      log('persistTracksToStorage: saved', tracks.length, 'tracks');
+    } catch (e) {
+      console.warn('persistTracksToStorage error', e);
+    }
+  }
 
   function openPlaylist() {
     log('openPlaylist called');
     if (!modal) buildModal();
-    modal.style.display = 'flex';
+    loadTracksFromStorageToState();
     renderList();
+    modal.style.display = 'flex';
   }
 
   function closePlaylist() {
@@ -69,8 +114,11 @@
     btnClose.id = 'playlist-save-close';
     btnClose.innerText = 'Save & Close ✖';
     btnClose.addEventListener('click', () => {
-      log('btnClose clicked: persistOrder and close');
-      persistOrder(true);
+      log('btnClose clicked: persist currentTracks and close');
+      persistTracksToStorage(currentTracks);
+      // Also update in-memory window.tracks if present so app.js sees change
+      try { if (Array.isArray(window.tracks)) { window.tracks = currentTracks.map(t => ({ baseName: t.baseName, audioTracks: t.audioTracks })); log('window.tracks updated in-memory'); } } catch (e) { }
+      closePlaylist();
     });
     header.appendChild(btnClose);
 
@@ -78,9 +126,7 @@
 
     const listWrap = document.createElement('div');
     listWrap.id = 'playlist-list-wrap';
-    Object.assign(listWrap.style, {
-      height: '90%', overflowY: 'auto', boxSizing: 'border-box'
-    });
+    Object.assign(listWrap.style, { height: '90%', overflowY: 'auto', boxSizing: 'border-box' });
     modal.appendChild(listWrap);
 
     const style = document.createElement('style');
@@ -98,45 +144,22 @@
     log('modal appended to body');
   }
 
-  function getTracksFromLocalStorage() {
-    try {
-      const stored = localStorage.getItem('config');
-      if (!stored) return [];
-      const cfg = JSON.parse(stored);
-      if (cfg.folders && cfg.folders.length > 0) {
-        const allTracks = cfg.folders.flatMap(f => f.tracks.map(t => ({
-          filename: t.filename,
-          baseName: t.filename,
-          audioTracks: t.audioTracks || []
-        })));
-        log('Loaded', allTracks.length, 'tracks from localStorage');
-        return allTracks;
-      }
-      return [];
-    } catch (e) {
-      console.warn('getTracksFromLocalStorage error', e);
-      return [];
-    }
-  }
-
   function renderList() {
     log('renderList called');
+    if (!modal) buildModal();
     const wrap = document.getElementById('playlist-list-wrap');
-    if (!wrap) return;
     wrap.innerHTML = '';
 
-    const tracks = getTracksFromLocalStorage();
-    log('renderList: tracks count', tracks.length);
-
-    if (tracks.length === 0) {
+    if (!Array.isArray(currentTracks) || currentTracks.length === 0) {
       const empty = document.createElement('div');
       empty.style.padding = '12px';
       empty.innerText = '目前沒有播放清單，請先選擇資料夾並掃描音檔';
       wrap.appendChild(empty);
+      log('renderList: currentTracks empty');
       return;
     }
 
-    tracks.forEach((t, idx) => {
+    currentTracks.forEach((t, idx) => {
       const item = document.createElement('div');
       item.className = 'pl-item';
       item.draggable = true;
@@ -145,33 +168,64 @@
       const name = document.createElement('div');
       name.className = 'pl-name';
       name.innerText = t.baseName || t.filename || ('Track ' + idx);
-      item.appendChild(name);
+      name.addEventListener('click', () => {
+        log('item click: jump to', idx, name.innerText);
+        // persist current order first
+        persistTracksToStorage(currentTracks);
+        // try to update window.tracks and call loadTrack with matching baseName
+        try {
+          if (Array.isArray(window.tracks)) {
+            const realIndex = window.tracks.findIndex(wt => wt.baseName === t.baseName);
+            if (realIndex >= 0) {
+              currentTrackIndex = realIndex;
+              loadTrack(realIndex);
+              log('loadTrack called for realIndex', realIndex);
+            } else {
+              // update window.tracks to currentTracks summary and try again
+              window.tracks = currentTracks.map(ct => ({ baseName: ct.baseName, audioTracks: ct.audioTracks }));
+              const newIndex = window.tracks.findIndex(wt => wt.baseName === t.baseName);
+              if (newIndex >= 0) { currentTrackIndex = newIndex; loadTrack(newIndex); log('loadTrack called after updating window.tracks, index', newIndex); }
+            }
+          }
+        } catch (e) { console.warn('jump/loadTrack error', e); }
+        closePlaylist();
+      });
 
       const drag = document.createElement('div');
       drag.className = 'pl-drag';
       drag.innerText = '↑↓';
-      item.appendChild(drag);
 
+      // drag handlers operate on currentTracks
       item.addEventListener('dragstart', (e) => {
         item.classList.add('dragging');
         e.dataTransfer.setData('text/plain', idx.toString());
+        e.dataTransfer.effectAllowed = 'move';
+        log('dragstart', idx, t.baseName);
       });
       item.addEventListener('dragend', () => item.classList.remove('dragging'));
-      item.addEventListener('dragover', (e) => e.preventDefault());
+
+      item.addEventListener('dragover', (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; });
       item.addEventListener('drop', (e) => {
         e.preventDefault();
         const from = parseInt(e.dataTransfer.getData('text/plain'), 10);
         const to = parseInt(item.dataset.index, 10);
-        log('drop from', from, 'to', to);
-        reorderArray(tracks, from, to);
-        persistTracks(tracks);
+        if (isNaN(from) || isNaN(to) || from === to) return;
+        const moved = currentTracks[from];
+        // perform reorder
+        reorderArray(currentTracks, from, to);
+        // log with song name and indices (1-based for readability)
+        log(`"${moved.baseName}" 排序從 ${from} 變成 ${to}`);
+        // persist and re-render
+        persistTracksToStorage(currentTracks);
         renderList();
       });
 
+      item.appendChild(name);
+      item.appendChild(drag);
       wrap.appendChild(item);
     });
 
-    log('renderList finished, items rendered =', tracks.length);
+    log('renderList finished, items rendered =', currentTracks.length);
   }
 
   function reorderArray(arr, from, to) {
@@ -181,58 +235,38 @@
   }
 
   function sortList() {
-    const tracks = getTracksFromLocalStorage();
+    if (!Array.isArray(currentTracks)) return;
     log('sortList, sortAsc=', sortAsc);
-    tracks.sort((a, b) => {
+    currentTracks.sort((a, b) => {
       const A = (a.baseName || a.filename || '').toLowerCase();
       const B = (b.baseName || b.filename || '').toLowerCase();
       if (A < B) return sortAsc ? -1 : 1;
       if (A > B) return sortAsc ? 1 : -1;
       return 0;
     });
-    persistTracks(tracks);
+    log('sortList: finished ordering, now persisting');
+    persistTracksToStorage(currentTracks);
   }
 
   function shuffleList() {
-    const tracks = getTracksFromLocalStorage();
+    if (!Array.isArray(currentTracks)) return;
     log('shuffleList');
-    for (let i = tracks.length - 1; i > 0; i--) {
+    for (let i = currentTracks.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
-      [tracks[i], tracks[j]] = [tracks[j], tracks[i]];
+      [currentTracks[i], currentTracks[j]] = [currentTracks[j], currentTracks[i]];
     }
-    persistTracks(tracks);
-  }
-
-  function persistTracks(tracks) {
-    try {
-      const cfg = JSON.parse(localStorage.getItem('config'));
-      if (!cfg.folders || cfg.folders.length === 0) return;
-      cfg.folders[0].tracks = tracks.map(t => ({ filename: t.baseName, audioTracks: t.audioTracks }));
-      localStorage.setItem('config', JSON.stringify(cfg));
-      if (typeof saveConfig === 'function') saveConfig();
-      log('persistTracks: saved to localStorage');
-    } catch (e) {
-      console.warn('persistTracks error', e);
-    }
-  }
-
-  function persistOrder(closeAfter = true) {
-    renderList();
-    if (closeAfter) closePlaylist();
+    persistTracksToStorage(currentTracks);
   }
 
   document.addEventListener('DOMContentLoaded', () => {
     log('DOMContentLoaded: attempting to bind #btn-playlist');
     const btn = document.getElementById('btn-playlist');
     if (btn) {
-      btn.addEventListener('click', (e) => {
-        e.preventDefault();
-        log('#btn-playlist clicked');
-        openPlaylist();
-      });
+      btn.addEventListener('click', (e) => { e.preventDefault(); log('#btn-playlist clicked'); openPlaylist(); });
       log('#btn-playlist bound');
     }
   });
 
-  window.PlaylistUI = { openPlaylist, closePlaylist, renderList };
+  // expose for debug
+  window.PlaylistUI = { openPlaylist, closePlaylist, renderList, loadTracksFromStorageToState };
 })();
