@@ -146,7 +146,7 @@
     leftGroup.appendChild(btnSort);
 
     const btnShuffle = document.createElement('button');
-    btnShuffle.innerText = 'Shuffle';
+    btnShuffle.innerHTML = '<i class="fa-solid fa-shuffle">';
     btnShuffle.addEventListener('click', () => {
       shuffleList();
       persistTracks();
