@@ -26,7 +26,7 @@ function readConfig() {
   if (raw) {
     try {
       const cfg = JSON.parse(raw);
-      // console.log("從 localStorage 讀取設定:", cfg); // 減少 Log 雜訊
+      // console.log("從 localStorage 讀取設定:", cfg);
       return cfg;
     } catch (e) {
       console.error("readConfig JSON 錯誤", e);
@@ -48,7 +48,7 @@ function readConfig() {
 function saveConfig() {
   try {
     localStorage.setItem('config', JSON.stringify(config));
-    // console.log("設定已儲存"); // 減少 Log，避免混淆
+    // console.log("設定已儲存");
   } catch (e) {
     console.error("saveConfig 錯誤", e);
   }
@@ -74,7 +74,7 @@ async function initializeApp() {
 window.onPlaylistUpdated = function () {
   console.log("[App] 收到播放清單更新通知，正在重新同步...");
 
-  // 1. 重新讀取最新的 localStorage 設定 (這時應該已經被 playlist.js 更新為正確順序)
+  // 1. 重新讀取最新的 localStorage 設定
   const newCfg = readConfig();
   if (!newCfg || !newCfg.folders) {
     console.error("[App] 同步失敗：讀取到的設定無效");
@@ -120,7 +120,7 @@ function setUpUIEvents() {
 
   folderOk.addEventListener('click', () => {
     if (tracks.length === 0) {
-      // 沒歌時保持開啟或做其他處理
+      // 沒歌時保持開啟
     }
     folderChooser.style.display = 'none';
   });
@@ -186,6 +186,7 @@ function scanFiles(files) {
   const validExt = ['mp3', 'wav', 'flac', 'm4a', 'aac', 'ogg'];
   const folderMaps = {};
 
+  // 1. 建立新掃描的檔案 Map
   files.forEach(file => {
     const relPath = (file.webkitRelativePath || file.name).replace(/\\/g, '/');
     const parts = relPath.split('/');
@@ -205,6 +206,7 @@ function scanFiles(files) {
     }
     const mainName = suffix ? nameNoExt.replace(new RegExp(`\\(${suffix}\\)$`), '').trim() : nameNoExt;
 
+    // 嘗試沿用舊的音量設定
     let oldVolume = 85;
     let oldMute = false;
     for (let folderCfg of config.folders) {
@@ -226,13 +228,36 @@ function scanFiles(files) {
     folderMaps[folderKey][mainName].push(entry);
   });
 
+  // 2. 更新 config.folders
   config.folders.forEach(folderCfg => {
     const key = normalizePath(folderCfg.path || '');
     const map = folderMaps[key] || {};
-    // 注意：這裡會重置 tracks 順序為掃描順序。
-    // 如果希望保留舊的順序可能需要更複雜的邏輯，但目前先以檔名掃描為主。
-    // 使用者可以在掃描後手動在 Playlist 調整順序。
+
+    // 【關鍵修正】：
+    // 在清空 folderCfg.tracks 之前，先保存當前的順序 (舊順序)
+    // 因為 config 是從 localStorage 讀出來的，裡面包含了上次排好的順序
+    const oldOrder = (folderCfg.tracks || []).map(t => t.filename);
+
     folderCfg.tracks = [];
+
+    // A. 先依照舊順序加入 (如果該檔案在本次掃描中還存在)
+    oldOrder.forEach(mainName => {
+      if (map[mainName]) {
+        const audioTracks = map[mainName].map(t => ({
+          filename: t.filename,
+          relPath: t.relPath,
+          blobUrl: t.blobUrl,
+          volume: t.volume,
+          mute: t.mute || false,
+          suffix: t.suffix
+        }));
+        folderCfg.tracks.push({ filename: mainName, audioTracks });
+        // 加入後從 map 中移除，避免重複加入
+        delete map[mainName];
+      }
+    });
+
+    // B. 將剩下的 (舊順序沒記錄到的新檔案) 加入
     Object.keys(map).forEach(mainName => {
       const audioTracks = map[mainName].map(t => ({
         filename: t.filename,
@@ -246,7 +271,7 @@ function scanFiles(files) {
     });
   });
 
-  console.log("掃描完成，config 更新完畢");
+  console.log("掃描完成，config 更新完畢 (已保留舊排序)");
   generateTrackListFromConfig();
 }
 

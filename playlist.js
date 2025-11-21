@@ -1,4 +1,4 @@
-// playlist.js — 修正版：移除 saveConfig 中的 app 回調，避免排序後的 localStorage 被主程式舊狀態覆蓋
+// playlist.js — 修正版：加入特殊排序邏輯 (去前綴 -> 抓點號前數字)
 
 (function () {
   let modal = null;
@@ -182,14 +182,63 @@
     arr.splice(to, 0, item);
   }
 
+  // 【排序核心邏輯修改】
+  // 解析檔名以進行智慧排序：
+  // 1. 去除第一個 `_` 之前的字元 (包含 `_`)
+  // 2. 解析直到 `.` 之前的數字，若無則為 999
+  // 3. 比較數字，若數字相同則比較字串
+  function parseSmartSortKey(name) {
+    // 1. 找到第一個底線，取出後面的字串
+    const underscoreIndex = name.indexOf('_');
+    let processedName = name;
+    if (underscoreIndex !== -1) {
+      processedName = name.substring(underscoreIndex + 1);
+    }
+
+    // 2. 解析點號前的數字
+    // 使用 Regex 抓取開頭的數字，且後面緊跟著 .
+    const match = processedName.match(/^(\d+)\./);
+    let number = 999; // 預設為 999 (最後)
+
+    if (match && match[1]) {
+      number = parseInt(match[1], 10);
+    }
+
+    return {
+      original: name,
+      processed: processedName,
+      number: number
+    };
+  }
+
   function sortList() {
     currentTracks.sort((a, b) => {
-      const A = a.baseName.toLowerCase();
-      const B = b.baseName.toLowerCase();
-      if (A < B) return sortAsc ? -1 : 1;
-      if (A > B) return sortAsc ? 1 : -1;
+      const keyA = parseSmartSortKey(a.baseName);
+      const keyB = parseSmartSortKey(b.baseName);
+
+      // 優先比較解析出來的數字
+      if (keyA.number !== keyB.number) {
+        // 數字小的在前 (若是倒序則反之)
+        return sortAsc ? (keyA.number - keyB.number) : (keyB.number - keyA.number);
+      }
+
+      // 如果數字相同 (例如都是 999 或都是 13)，則依照處理後的字串字典順序
+      const strA = keyA.processed.toLowerCase();
+      const strB = keyB.processed.toLowerCase();
+
+      if (strA < strB) return sortAsc ? -1 : 1;
+      if (strA > strB) return sortAsc ? 1 : -1;
       return 0;
     });
+
+    // 方便 Debug 查看排序結果
+    if (currentTracks.length > 0) {
+      const debugInfo = currentTracks.slice(0, 5).map(t => {
+        const k = parseSmartSortKey(t.baseName);
+        return `${t.baseName} -> num:${k.number}`;
+      });
+      log('Sort result (top 5):', debugInfo);
+    }
     log('sortList done, sortAsc =', sortAsc);
   }
 
