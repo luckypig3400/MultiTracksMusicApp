@@ -1,5 +1,4 @@
-// playlist.js — 修正版：確保播放點擊可正確切換歌曲，並讓排序/拖曳變更後即時保存到 localStorage。
-// 額外：每次保存後，會在 console 中輸出完整 JSON (config.folders[0].tracks) 以供檢查。
+// playlist.js — 修正版：移除 saveConfig 中的 app 回調，避免排序後的 localStorage 被主程式舊狀態覆蓋
 
 (function () {
   let modal = null;
@@ -15,7 +14,10 @@
 
   function saveConfig(cfg) {
     localStorage.setItem('config', JSON.stringify(cfg));
-    if (typeof window.saveConfig === 'function') window.saveConfig();
+    // 【關鍵修正】：這裡絕對不能呼叫 window.saveConfig()
+    // 因為 app.js 的 saveConfig 會把 app 記憶體中「還沒更新排序」的 config 寫回 localStorage
+    // 導致這裡辛苦排好的順序瞬間被覆蓋掉。
+    log('Config saved to localStorage directly.');
   }
 
   function loadTracksFromStorage() {
@@ -32,9 +34,7 @@
     if (!cfg.folders.length) cfg.folders = [{ path: 'Unknown', tracks: [] }];
     cfg.folders[0].tracks = currentTracks.map(t => ({ filename: t.baseName, audioTracks: t.audioTracks }));
     saveConfig(cfg);
-    const json = JSON.stringify(cfg.folders[0].tracks, null, 2);
-    log('persistTracks: saved', currentTracks.length, 'tracks');
-    console.log('[Playlist] localStorage.config.folders[0].tracks =', json);
+    log('persistTracks: saved order for', currentTracks.length, 'tracks');
   }
 
   function openPlaylist() {
@@ -75,6 +75,7 @@
       sortAsc = !sortAsc;
       sortList();
       persistTracks();
+      syncAppTracks(); // 排序後立即通知 App 更新
       renderList();
     });
     leftGroup.appendChild(btnSort);
@@ -84,6 +85,7 @@
     btnShuffle.addEventListener('click', () => {
       shuffleList();
       persistTracks();
+      syncAppTracks(); // Shuffle 後立即通知 App 更新
       renderList();
     });
     leftGroup.appendChild(btnShuffle);
@@ -123,14 +125,16 @@
       name.innerText = t.baseName;
       name.style.width = '85%';
       name.style.cursor = 'pointer';
+
+      // 點擊歌名跳轉播放
       name.addEventListener('click', () => {
-        log('item click: jump to', i, t.baseName);
+        log('item click: jump to', t.baseName);
         persistTracks();
         syncAppTracks();
+
         if (typeof window.loadTrack === 'function' && Array.isArray(window.tracks)) {
           const realIndex = window.tracks.findIndex(wt => wt.baseName === t.baseName);
           if (realIndex >= 0) {
-            window.currentTrackIndex = realIndex;
             window.loadTrack(realIndex);
             log('loadTrack executed for', t.baseName, 'at index', realIndex);
           } else {
@@ -161,6 +165,7 @@
         reorderArray(currentTracks, from, to);
         log(`"${moved.baseName}" 排序從 ${from} 變成 ${to}`);
         persistTracks();
+        syncAppTracks(); // 拖曳後立即通知 App 更新
         renderList();
       });
 
@@ -197,9 +202,12 @@
   }
 
   function syncAppTracks() {
-    if (!Array.isArray(window.tracks)) window.tracks = [];
-    window.tracks = currentTracks.map(t => ({ baseName: t.baseName, audioTracks: t.audioTracks }));
-    log('syncAppTracks: window.tracks updated, count =', window.tracks.length);
+    if (typeof window.onPlaylistUpdated === 'function') {
+      window.onPlaylistUpdated();
+      log('syncAppTracks: called window.onPlaylistUpdated()');
+    } else {
+      log('syncAppTracks: window.onPlaylistUpdated not found!');
+    }
   }
 
   document.addEventListener('DOMContentLoaded', () => {

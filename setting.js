@@ -77,15 +77,18 @@ const ThemeManager = (() => {
 // 初始化設定頁面
 document.addEventListener('DOMContentLoaded', () => {
   const textarea = document.getElementById('config-text');
+  // 加入防呆，如果這個頁面沒有 config-text (例如在 index.html)，就只執行主題初始化後退出
+  const btnTheme = document.getElementById('btn-theme-toggle');
+  // 初始化主題
+  ThemeManager.loadAndApplyTheme(btnTheme);
+
+  if (!textarea) return;
+
   const btnBack = document.getElementById('btn-back');
   const btnSave = document.getElementById('btn-save-file');
   const btnLoad = document.getElementById('btn-load-file');
   const btnClear = document.getElementById('btn-clear');
   const fileInput = document.getElementById('file-input');
-  const btnTheme = document.getElementById('btn-theme-toggle');
-
-  // 初始化主題
-  ThemeManager.loadAndApplyTheme(btnTheme);
 
   // 讀取 localStorage config
   function loadConfig() {

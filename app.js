@@ -26,7 +26,7 @@ function readConfig() {
   if (raw) {
     try {
       const cfg = JSON.parse(raw);
-      console.log("從 localStorage 讀取設定:", cfg);
+      // console.log("從 localStorage 讀取設定:", cfg); // 減少 Log 雜訊
       return cfg;
     } catch (e) {
       console.error("readConfig JSON 錯誤", e);
@@ -48,7 +48,7 @@ function readConfig() {
 function saveConfig() {
   try {
     localStorage.setItem('config', JSON.stringify(config));
-    console.log("設定已儲存");
+    // console.log("設定已儲存"); // 減少 Log，避免混淆
   } catch (e) {
     console.error("saveConfig 錯誤", e);
   }
@@ -60,15 +60,56 @@ async function initializeApp() {
   skipSeconds = config.skipSeconds || 5;
   setUpUIEvents();
 
-  if (!config.folders || config.folders.length === 0) {
-    console.log("尚未設定資料夾 -> 顯示選擇介面");
-    showFolderChooser(true);
-  } else {
-    console.log("偵測到資料夾設定:", config.folders);
-    await loadTracksFromConfig();
-  }
+  // 暴露方法給 playlist.js 使用
+  window.loadTrack = loadTrack;
+  window.currentTrackIndex = currentTrackIndex;
+
+  console.log("初始化：等待使用者重新選擇資料夾以更新 Blob URL");
+  showFolderChooser(true);
+
   console.log("initializeApp done");
 }
+
+// 提供給 Playlist.js 呼叫的同步介面
+window.onPlaylistUpdated = function () {
+  console.log("[App] 收到播放清單更新通知，正在重新同步...");
+
+  // 1. 重新讀取最新的 localStorage 設定 (這時應該已經被 playlist.js 更新為正確順序)
+  const newCfg = readConfig();
+  if (!newCfg || !newCfg.folders) {
+    console.error("[App] 同步失敗：讀取到的設定無效");
+    return;
+  }
+
+  // 更新 config 參照
+  config.folders = newCfg.folders;
+
+  // 2. 記住當前正在播放的歌名
+  const currentSongName = tracks[currentTrackIndex]?.baseName;
+
+  // 3. 重新生成內部的 tracks 陣列
+  generateTrackListFromConfig();
+
+  // Debug: 驗證排序是否生效
+  if (tracks.length > 0) {
+    const preview = tracks.slice(0, 3).map((t, i) => `${i}: ${t.baseName}`).join(', ');
+    console.log(`[App] 同步後的前三首歌曲順序: ${preview}`);
+  }
+
+  // 4. 修正 currentTrackIndex，防止切歌時跳錯首
+  if (currentSongName) {
+    const newIdx = tracks.findIndex(t => t.baseName === currentSongName);
+    if (newIdx >= 0) {
+      currentTrackIndex = newIdx;
+      window.currentTrackIndex = newIdx;
+      console.log(`[App] Index 已修正: 目前播放 "${currentSongName}" 改為索引 [${newIdx}]`);
+    } else {
+      currentTrackIndex = 0;
+      window.currentTrackIndex = 0;
+      console.warn(`[App] 警告: 原本播放的歌曲 "${currentSongName}" 在新清單中找不到，重置為 0`);
+    }
+  }
+};
 
 function setUpUIEvents() {
   const folderInput = document.getElementById('folder-input');
@@ -76,7 +117,13 @@ function setUpUIEvents() {
   const folderOk = document.getElementById('folder-ok');
 
   folderInput.addEventListener('change', (e) => handleFolderSelect(e.target.files));
-  folderOk.addEventListener('click', () => folderChooser.style.display = 'none');
+
+  folderOk.addEventListener('click', () => {
+    if (tracks.length === 0) {
+      // 沒歌時保持開啟或做其他處理
+    }
+    folderChooser.style.display = 'none';
+  });
 
   const btnSettings = document.getElementById('btn-settings');
   if (btnSettings) btnSettings.addEventListener('click', () => window.location.href = 'setting.html');
@@ -85,11 +132,11 @@ function setUpUIEvents() {
   document.getElementById('btn-prev').addEventListener('click', previousTrack);
   document.getElementById('btn-random').addEventListener('click', () => {
     isRandom = !isRandom;
-    document.getElementById('btn-random').innerHTML = isRandom ? '<i class="fa-solid fa-shuffle" style="color: gold;">' : '<i class="fa-solid fa-shuffle">';// on/off
+    document.getElementById('btn-random').innerHTML = isRandom ? '<i class="fa-solid fa-shuffle" style="color: gold;">' : '<i class="fa-solid fa-shuffle">';
   });
   document.getElementById('btn-repeat').addEventListener('click', () => {
     repeatMode = (repeatMode + 1) % 3;
-    const text = repeatMode === 0 ? '<i class="fa-solid fa-repeat"></i>' : (repeatMode === 1 ? '<i class="fa-solid fa-repeat" style="color: gold;">&nbsp;1</i>' : '<i class="fa-solid fa-repeat" style="color: gold;">A</i>'); // 重複：關/單曲/清單
+    const text = repeatMode === 0 ? '<i class="fa-solid fa-repeat"></i>' : (repeatMode === 1 ? '<i class="fa-solid fa-repeat" style="color: gold;">&nbsp;1</i>' : '<i class="fa-solid fa-repeat" style="color: gold;">A</i>');
     document.getElementById('btn-repeat').innerHTML = text;
   });
 
@@ -107,7 +154,7 @@ function setUpUIEvents() {
 
 function showFolderChooser(show) {
   const chooser = document.getElementById('folder-chooser');
-  chooser.style.display = show ? 'block' : 'none';
+  if (chooser) chooser.style.display = show ? 'block' : 'none';
 }
 
 function handleFolderSelect(fileList) {
@@ -130,7 +177,6 @@ function handleFolderSelect(fileList) {
     }
   });
 
-  updateBlobUrlsByRelPath(files);
   scanFiles(files);
   saveConfig();
   showFolderChooser(false);
@@ -159,7 +205,6 @@ function scanFiles(files) {
     }
     const mainName = suffix ? nameNoExt.replace(new RegExp(`\\(${suffix}\\)$`), '').trim() : nameNoExt;
 
-    // 檢查是否已存在相同相對路徑，沿用舊 volume 與 mute 設定
     let oldVolume = 85;
     let oldMute = false;
     for (let folderCfg of config.folders) {
@@ -184,6 +229,9 @@ function scanFiles(files) {
   config.folders.forEach(folderCfg => {
     const key = normalizePath(folderCfg.path || '');
     const map = folderMaps[key] || {};
+    // 注意：這裡會重置 tracks 順序為掃描順序。
+    // 如果希望保留舊的順序可能需要更複雜的邏輯，但目前先以檔名掃描為主。
+    // 使用者可以在掃描後手動在 Playlist 調整順序。
     folderCfg.tracks = [];
     Object.keys(map).forEach(mainName => {
       const audioTracks = map[mainName].map(t => ({
@@ -198,60 +246,53 @@ function scanFiles(files) {
     });
   });
 
-  console.log("掃描完成，保留舊音量:", config);
+  console.log("掃描完成，config 更新完畢");
   generateTrackListFromConfig();
 }
 
-function updateBlobUrlsByRelPath(files) {
-  if (!config || !config.folders) return;
-  const fileMap = new Map();
-  files.forEach(f => {
-    const rel = (f.webkitRelativePath || f.name).replace(/\\/g, '/');
-    fileMap.set(rel, URL.createObjectURL(f));
-  });
-  config.folders.forEach(folder => {
-    folder.tracks?.forEach(track => {
-      track.audioTracks?.forEach(at => {
-        if (fileMap.has(at.relPath)) {
-          at.blobUrl = fileMap.get(at.relPath);
-        }
-      });
-    });
-  });
-  console.log("blobUrl 已依相對路徑更新");
-}
-
 function generateTrackListFromConfig() {
-  tracks = [];
-  audioElements = [];
+  // 這裡不清除 audioElements，避免打斷正在播放的音樂
+  const newTracks = [];
+
   if (!config.folders || config.folders.length === 0) return;
   const folder = config.folders[0];
-  if (!folder.tracks || folder.tracks.length === 0) return;
-  folder.tracks.forEach(t => {
-    tracks.push({ baseName: t.filename, audioTracks: t.audioTracks.map(at => ({ ...at })) });
-  });
-  console.log("播放清單建立，共", tracks.length, "首");
-  if (tracks.length > 0) {
-    currentTrackIndex = 0;
-    loadTrack(currentTrackIndex);
+
+  if (folder && folder.tracks) {
+    folder.tracks.forEach(t => {
+      newTracks.push({ baseName: t.filename, audioTracks: t.audioTracks.map(at => ({ ...at })) });
+    });
+  }
+
+  tracks = newTracks;
+  window.tracks = tracks;
+
+  console.log("播放清單已更新，共", tracks.length, "首");
+
+  // 僅在沒有音樂正在播放且清單不為空時，才載入第一首 (初始化用)
+  if (tracks.length > 0 && audioElements.length === 0) {
+    loadTrack(0);
   }
 }
 
 function loadTrack(index) {
   if (!tracks[index]) return;
+  currentTrackIndex = index;
+  window.currentTrackIndex = index;
+
   const track = tracks[index];
-  console.log("載入歌曲:", track);
+  console.log(`載入歌曲 [${index}]: ${track.baseName}`);
   document.getElementById('music-name').innerText = track.baseName;
+
   audioElements.forEach(a => { try { a.pause(); } catch { } });
   audioElements = [];
+
   const vc = document.getElementById('volume-controls');
   vc.innerHTML = '';
 
   track.audioTracks.forEach((at, idx) => {
     const audio = new Audio();
-    audio.src = at.blobUrl || at.relPath; // blobUrl 優先，否則嘗試相對路徑
+    audio.src = at.blobUrl || at.relPath;
     audio.preload = 'auto';
-    // 若已經設定 mute，則暫時把音量設為 0，但保留 at.volume 作為保存值
     audio.volume = (at.mute ? 0 : ((typeof at.volume === 'number') ? (at.volume / 100) : 0.85));
     audioElements.push(audio);
 
@@ -261,7 +302,6 @@ function loadTrack(index) {
     const label = document.createElement('div');
     label.className = 'lbl';
     label.innerText = at.suffix ? `(${at.suffix})` : '(未知)';
-    // 點擊標籤切換靜音/還原
     label.style.cursor = 'pointer';
     label.addEventListener('click', () => {
       toggleMuteForTrack(idx);
@@ -271,7 +311,6 @@ function loadTrack(index) {
     const slider = document.createElement('input');
     slider.type = 'range';
     slider.min = 0; slider.max = 100;
-    // 顯示的 slider 值如果是靜音就顯示 0，否則顯示保存的音量
     slider.value = at.mute ? 0 : (at.volume ?? 85);
     slider.style.width = '85%';
     row.appendChild(slider);
@@ -283,11 +322,9 @@ function loadTrack(index) {
     num.style.width = '10%';
     row.appendChild(num);
 
-    // 綁定 slider 與數字輸入更新
     slider.addEventListener('input', () => {
       num.value = slider.value;
       audio.volume = slider.value / 100;
-      // 當 user 手動改變 slider 時視為取消靜音
       at.mute = false;
       at.volume = parseInt(slider.value);
       persistVolumeSetting(track.baseName, at.filename, at.volume);
@@ -303,34 +340,27 @@ function loadTrack(index) {
     });
 
     vc.appendChild(row);
-
-    // 把 UI 元件綁進 at 以便 mute 切換時操作
-    at._ui = { slider, num, label, audio }; // 非序列化屬性
+    at._ui = { slider, num, label, audio };
   });
 
   if (audioElements[0]) {
     const first = audioElements[0];
     first.addEventListener('ended', onTrackEnd);
 
-    // 當開始播放時先延遲 200ms 再檢查同步
     const startPlay = () => {
-      // 清除舊 timers
       if (initialSyncTimeoutId) clearTimeout(initialSyncTimeoutId);
       if (syncIntervalId) clearInterval(syncIntervalId);
 
       initialSyncTimeoutId = setTimeout(() => {
         syncCheckAndFix();
-        // 每 3 秒檢查一次
         syncIntervalId = setInterval(() => {
           if (!audioElements.length) return;
-          // 只在播放中檢查
           if (audioElements[0].paused) return;
           syncCheckAndFix();
         }, 3000);
       }, 200);
     };
 
-    // 在 canplaythrough 或 user play 事件後都呼叫 startPlay
     first.addEventListener('canplaythrough', startPlay, { once: true });
 
     first.play().then(() => {
@@ -338,12 +368,9 @@ function loadTrack(index) {
       startProgressLoop();
       startPlay();
     }).catch(err => {
-      console.warn("播放失敗:", err);
-      alert("檔案無法播放或路徑已失效，請重新選擇資料夾以更新 blobUrl");
-      showFolderChooser(true);
+      console.warn("播放失敗 (可能是 blob 失效或格式不支援):", err);
     });
 
-    // 當暫停時停止定時器
     first.addEventListener('pause', () => {
       if (syncIntervalId) { clearInterval(syncIntervalId); syncIntervalId = null; }
       if (initialSyncTimeoutId) { clearTimeout(initialSyncTimeoutId); initialSyncTimeoutId = null; }
@@ -352,7 +379,6 @@ function loadTrack(index) {
 }
 
 function toggleMuteForTrack(idx) {
-  // 切換指定音軌的靜音狀態，並更新 UI 與 config
   const track = tracks[currentTrackIndex];
   if (!track) return;
   const at = track.audioTracks[idx];
@@ -361,31 +387,24 @@ function toggleMuteForTrack(idx) {
   if (!ui) return;
 
   if (!at.mute) {
-    // 進入靜音: 保留原始音量在 at.volume，將播放音量設定為 0
     at.mute = true;
     ui.audio.volume = 0;
     ui.slider.value = 0;
     ui.num.value = 0;
     ui.label.style.opacity = '0.6';
-    console.log(`已將 ${at.filename} 靜音`);
   } else {
-    // 取消靜音: 還原到保存的音量
     at.mute = false;
     const restored = at.volume ?? 85;
     ui.audio.volume = restored / 100;
     ui.slider.value = restored;
     ui.num.value = restored;
     ui.label.style.opacity = '1';
-    console.log(`已還原 ${at.filename} 音量為 ${restored}`);
   }
-
-  // 儲存設定
   saveConfig();
 }
 
 function onTrackEnd() {
   if (repeatMode === 1) {
-    // 單曲重複重新載入並播放
     loadTrack(currentTrackIndex);
   } else if (repeatMode === 2) {
     nextTrack();
@@ -403,7 +422,6 @@ function persistVolumeSetting(baseName, filename, volume) {
     const at = tr.audioTracks.find(a => a.filename === filename);
     if (!at) return;
     at.volume = volume;
-    // 手動改變音量視為取消靜音
     at.mute = false;
     saveConfig();
   } catch (e) { console.error("persistVolumeSetting 錯誤", e); }
@@ -415,7 +433,6 @@ function playPause() {
   if (first.paused) {
     audioElements.forEach(a => a.play().catch(e => console.warn("play error", e)));
     document.getElementById('btn-play').innerHTML = '<i class="fa-solid fa-pause"></i>';
-    // 使用者手動播放也要啟動同步檢查
     if (initialSyncTimeoutId) clearTimeout(initialSyncTimeoutId);
     initialSyncTimeoutId = setTimeout(() => { syncCheckAndFix(); syncIntervalId = setInterval(() => { if (!audioElements[0].paused) syncCheckAndFix(); }, 5000); }, 200);
   } else {
@@ -429,6 +446,7 @@ function playPause() {
 function nextTrack() {
   if (!tracks.length) return;
   currentTrackIndex = isRandom ? Math.floor(Math.random() * tracks.length) : (currentTrackIndex + 1) % tracks.length;
+  console.log("Next Track -> Index:", currentTrackIndex);
   loadTrack(currentTrackIndex);
 }
 function previousTrack() {
@@ -471,7 +489,6 @@ function formatTime(sec) {
 }
 
 function formatTimeMs(ms) {
-  // 輸出 mi:ss:ms 三位數毫秒
   const totalMs = Math.round(ms);
   const minutes = Math.floor(totalMs / 60000);
   const seconds = Math.floor((totalMs % 60000) / 1000);
@@ -479,44 +496,36 @@ function formatTimeMs(ms) {
   return `${minutes}:${seconds < 10 ? '0' + seconds : seconds}:${millis.toString().padStart(3, '0')}`;
 }
 
-// 同步檢查與修正 (修正版：改為全部音軌一起同步)
 function syncCheckAndFix() {
   if (!audioElements.length) return;
-  // 若剛剛才調整過，短時間內不再調整，避免來回震盪
   const now = Date.now();
   if (now - lastSyncAdjustTimestamp < 600) return;
 
   const timesMs = audioElements.map(a => Math.round((a.currentTime || 0) * 1000));
-  // 找出最多音軌的時間 (頻率最高)
   const freq = {};
   timesMs.forEach(t => freq[t] = (freq[t] || 0) + 1);
   let mostCommonTime = null; let mostCount = 0;
   for (const k in freq) {
     if (freq[k] > mostCount) { mostCount = freq[k]; mostCommonTime = parseInt(k); }
   }
-  // 決定基準時間 如果有多個不同時間且多於1個不同值 以 Vocals 為準
+
   const uniqueTimes = Object.keys(freq).length;
   let refTime = mostCommonTime;
   if (uniqueTimes > 1) {
-    // 嘗試找 Vocals
     const vocalsIndex = tracks[currentTrackIndex]?.audioTracks?.findIndex(at => at.suffix === 'Vocals');
     if (vocalsIndex != null && vocalsIndex >= 0 && vocalsIndex < audioElements.length) {
       refTime = Math.round((audioElements[vocalsIndex].currentTime || 0) * 1000);
     }
   }
 
-  // 檢查每個音軌是否偏離超過容忍值
-  const toleranceMs = 15; // 放寬到 15ms，減少頻繁微調
+  const toleranceMs = 15;
   const diffs = timesMs.map(t => t - refTime);
   const needAdjust = diffs.some(d => Math.abs(d) > toleranceMs);
   if (!needAdjust) return;
 
-  // 記錄調整前時間
   const before = audioElements.map((a, i) => ({ label: tracks[currentTrackIndex]?.audioTracks?.[i]?.suffix || a.src || i, timeMs: timesMs[i] }));
 
-  // 若有多個時間不一致 且有 Vocals，則以 Vocals 為準，否則以 mostCommonTime
   const finalRef = refTime;
-  // 這次修改：同步時所有音軌（包括 Vocals）都對齊同一 refTime
   audioElements.forEach(a => {
     try {
       a.currentTime = finalRef / 1000;
@@ -525,25 +534,19 @@ function syncCheckAndFix() {
     }
   });
 
-  // 更新上次調整時間，避免短時間內再度調整
   lastSyncAdjustTimestamp = Date.now();
 
-  // 記錄調整後時間（稍後取樣以免立刻讀到未同步的值）
   setTimeout(() => {
     const afterMs = audioElements.map(a => Math.round((a.currentTime || 0) * 1000));
     const after = audioElements.map((a, i) => ({ label: tracks[currentTrackIndex]?.audioTracks?.[i]?.suffix || a.src || i, timeMs: afterMs[i] }));
-
-    console.log('已調整音軌, 調整前', before.map(b => `${b.label} ${formatTimeMs(b.timeMs)}`).join(', '), '調整後', after.map(b => `${b.label} ${formatTimeMs(b.timeMs)}`).join(', '));
-
-    // 閃爍進度條
+    // console.log('已調整音軌, 調整前', before.map(b => `${b.label} ${formatTimeMs(b.timeMs)}`).join(', '), '調整後', after.map(b => `${b.label} ${formatTimeMs(b.timeMs)}`).join(', '));
     flashProgressBar();
-  }, 80); // 等 80ms 再讀取一次時間以取得穩定值
+  }, 80);
 }
 
 function flashProgressBar() {
   const p = document.getElementById('progress');
   if (!p) return;
-  // 使用 boxShadow 與 background 快速顯示變化（比改變 input background 更可靠）
   const originalBox = p.style.boxShadow || '';
   const originalBg = p.style.backgroundColor || '';
   p.style.transition = 'box-shadow 0.06s, background-color 0.06s';
