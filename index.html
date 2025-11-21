@@ -136,7 +136,9 @@
   <script src="setting.js"></script>
   <script>
     document.addEventListener('DOMContentLoaded', () => {
-      ThemeManager.loadAndApplyTheme(); // 自動套用已儲存的主題設定
+      if (window.ThemeManager) {
+        ThemeManager.loadAndApplyTheme(); // 自動套用已儲存的主題設定
+      }
     });
   </script>
 

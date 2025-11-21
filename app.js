@@ -126,7 +126,16 @@ function setUpUIEvents() {
   });
 
   const btnSettings = document.getElementById('btn-settings');
-  if (btnSettings) btnSettings.addEventListener('click', () => window.location.href = 'setting.html');
+  // 【修改】：使用 SettingsUI.openSettings() 而不是跳轉頁面
+  if (btnSettings) btnSettings.addEventListener('click', () => {
+    if (window.SettingsUI) {
+      window.SettingsUI.openSettings();
+    } else {
+      console.error("SettingsUI module not loaded.");
+      window.location.href = 'setting.html'; // Fallback (雖然 setting.html 內容已經移除了)
+    }
+  });
+
   document.getElementById('btn-play').addEventListener('click', playPause);
   document.getElementById('btn-next').addEventListener('click', nextTrack);
   document.getElementById('btn-prev').addEventListener('click', previousTrack);
@@ -240,7 +249,7 @@ function scanFiles(files) {
 
     folderCfg.tracks = [];
 
-    // A. 先依照舊順序加入 (如果該檔案在本次掃描中還存在)
+    // A. 先依照舊順序加入
     oldOrder.forEach(mainName => {
       if (map[mainName]) {
         const audioTracks = map[mainName].map(t => ({
@@ -257,7 +266,7 @@ function scanFiles(files) {
       }
     });
 
-    // B. 將剩下的 (舊順序沒記錄到的新檔案) 加入
+    // B. 將剩下的 (新檔案) 加入
     Object.keys(map).forEach(mainName => {
       const audioTracks = map[mainName].map(t => ({
         filename: t.filename,
