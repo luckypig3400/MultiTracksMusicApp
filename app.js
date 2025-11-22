@@ -105,6 +105,9 @@ async function initializeApp() {
   skipSeconds = config.skipSeconds || 5;
   setUpUIEvents();
 
+  // 【新增】設定 Media Session API (手機通知列控制)
+  setupMediaSession();
+
   window.loadTrack = loadTrack;
   window.currentTrackIndex = currentTrackIndex;
 
@@ -113,6 +116,7 @@ async function initializeApp() {
     seekTo: (time) => {
       if (audioElements.length) {
         audioElements.forEach(a => a.currentTime = time);
+        updateMediaSessionPositionState(); // 更新通知列進度
       }
     },
     getConfig: () => config,
@@ -136,6 +140,60 @@ async function initializeApp() {
   console.log("initializeApp done");
 }
 
+function setupMediaSession() {
+  if ('mediaSession' in navigator) {
+    navigator.mediaSession.setActionHandler('play', () => playPause());
+    navigator.mediaSession.setActionHandler('pause', () => playPause());
+    navigator.mediaSession.setActionHandler('previoustrack', () => previousTrack());
+    navigator.mediaSession.setActionHandler('nexttrack', () => nextTrack());
+
+    // 支援進度條拖曳 (Seek)
+    navigator.mediaSession.setActionHandler('seekto', (details) => {
+      if (audioElements.length && details.seekTime !== undefined) {
+        audioElements.forEach(a => a.currentTime = details.seekTime);
+        updateMediaSessionPositionState();
+      }
+    });
+  }
+}
+
+// 【新增】更新 Media Session Metadata (歌名、演出者)
+function updateMediaSessionMetadata() {
+  if (!('mediaSession' in navigator) || !tracks[currentTrackIndex]) return;
+
+  const track = tracks[currentTrackIndex];
+  // 嘗試從檔名解析更漂亮的標題 (可選)
+  // 這裡直接使用 baseName
+  navigator.mediaSession.metadata = new MediaMetadata({
+    title: track.baseName,
+    artist: 'MultiTracks Player',
+    album: config.activeFolderPath || 'Unknown Folder',
+    artwork: [
+      // 這裡可以放預設圖示，如果沒有就留空
+      // { src: 'icon.png', sizes: '96x96', type: 'image/png' }
+    ]
+  });
+}
+
+// 【新增】更新 Media Session Position State (進度條)
+function updateMediaSessionPositionState() {
+  if (!('mediaSession' in navigator) || !audioElements[0]) return;
+
+  const audio = audioElements[0];
+  if (isNaN(audio.duration) || isNaN(audio.currentTime)) return;
+
+  try {
+    navigator.mediaSession.setPositionState({
+      duration: audio.duration,
+      playbackRate: audio.playbackRate,
+      position: audio.currentTime
+    });
+  } catch (e) {
+    // 某些情況下 duration 可能還沒準備好，忽略錯誤
+    console.warn("MediaSession update failed:", e);
+  }
+}
+
 window.onPlaylistUpdated = function () {
   console.log("[App] 收到播放清單更新通知，正在重新同步...");
   const newCfg = readConfig();
@@ -146,7 +204,7 @@ window.onPlaylistUpdated = function () {
 
   // 保留 activeFolderPath
   const currentActive = config.activeFolderPath;
-  config = newCfg; // 整個替換
+  config = newCfg;
   if (!config.activeFolderPath && currentActive) config.activeFolderPath = currentActive;
 
   // 將 Blob URL 填回 config
@@ -445,6 +503,9 @@ function loadTrack(index) {
   console.log(`載入歌曲 [${index}]: ${track.baseName}`);
   document.getElementById('music-name').innerText = track.baseName;
 
+  // 【新增】更新通知列 Metadata
+  updateMediaSessionMetadata();
+
   audioElements.forEach(a => { try { a.pause(); } catch { } });
   audioElements = [];
 
@@ -499,6 +560,12 @@ function loadTrack(index) {
   if (audioElements[0]) {
     const first = audioElements[0];
     first.addEventListener('ended', onTrackEnd);
+
+    // 【新增】當準備好播放時更新一次狀態，確保 duration 正確
+    first.addEventListener('loadedmetadata', () => {
+      updateMediaSessionPositionState();
+    });
+
     const startPlay = () => {
       if (initialSyncTimeoutId) clearTimeout(initialSyncTimeoutId);
       if (syncIntervalId) clearInterval(syncIntervalId);
@@ -516,9 +583,15 @@ function loadTrack(index) {
       audioElements.forEach((a, i) => { if (a !== first) a.play().catch(() => { }); });
       startProgressLoop();
       startPlay();
-    }).catch(err => alert(`播放失敗 ，可能是切換到本次未載入的資料夾或檔案連結失效\r\n建議重新載入網頁並重選資料夾(或到設定重新載入音樂範本)\r\n詳細訊息:${err}`,));
+      // 【新增】播放成功後，更新通知列狀態為播放中
+      navigator.mediaSession.playbackState = 'playing';
+      updateMediaSessionPositionState();
+    }).catch(err => console.warn("播放失敗:", err));
+
     first.addEventListener('pause', () => {
       if (syncIntervalId) clearInterval(syncIntervalId);
+      // 【新增】暫停時更新通知列
+      navigator.mediaSession.playbackState = 'paused';
     });
   }
 
@@ -577,11 +650,20 @@ function playPause() {
   if (first.paused) {
     audioElements.forEach(a => a.play().catch(e => console.warn(e)));
     document.getElementById('btn-play').innerHTML = '<i class="fa-solid fa-pause"></i>';
+
+    // 【新增】更新通知列狀態
+    navigator.mediaSession.playbackState = 'playing';
+    updateMediaSessionPositionState();
+
     if (initialSyncTimeoutId) clearTimeout(initialSyncTimeoutId);
     initialSyncTimeoutId = setTimeout(() => { syncCheckAndFix(); syncIntervalId = setInterval(() => { if (!audioElements[0].paused) syncCheckAndFix(); }, 5000); }, 200);
   } else {
     audioElements.forEach(a => a.pause());
     document.getElementById('btn-play').innerHTML = '<i class="fa-solid fa-play"></i>';
+
+    // 【新增】更新通知列狀態
+    navigator.mediaSession.playbackState = 'paused';
+
     if (syncIntervalId) clearInterval(syncIntervalId);
   }
 }
@@ -597,8 +679,20 @@ function previousTrack() {
   loadTrack(currentTrackIndex);
 }
 
-function seekForward() { audioElements.forEach(a => a.currentTime = Math.min(a.duration || 0, a.currentTime + skipSeconds)); }
-function seekBackward() { audioElements.forEach(a => a.currentTime = Math.max(0, a.currentTime - skipSeconds)); }
+function seekForward() {
+  // 快進 5 秒
+  if (!audioElements.length) return;
+  const newTime = Math.min(audioElements[0].duration || 0, audioElements[0].currentTime + skipSeconds);
+  audioElements.forEach(a => a.currentTime = newTime);
+  updateMediaSessionPositionState();
+}
+function seekBackward() {
+  // 快退 5 秒
+  if (!audioElements.length) return;
+  const newTime = Math.max(0, audioElements[0].currentTime - skipSeconds);
+  audioElements.forEach(a => a.currentTime = newTime);
+  updateMediaSessionPositionState();
+}
 
 function onProgressChange(e) {
   if (!audioElements.length) return;
@@ -606,6 +700,8 @@ function onProgressChange(e) {
   const first = audioElements[0];
   const newTime = (val / 100) * (first.duration || 0);
   audioElements.forEach(a => a.currentTime = newTime);
+  // 【新增】手動拖曳進度條時，也要更新通知列
+  updateMediaSessionPositionState();
 }
 
 function startProgressLoop() {
