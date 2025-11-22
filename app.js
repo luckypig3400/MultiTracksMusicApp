@@ -116,7 +116,11 @@ async function initializeApp() {
       }
     },
     getConfig: () => config,
-    saveConfig: saveConfig
+    saveConfig: saveConfig,
+    loadFiles: (files) => {
+      scanFiles(files);
+      saveConfig();
+    }
   };
 
   console.log("初始化：等待使用者重新選擇資料夾以更新 Blob URL");
@@ -130,27 +134,10 @@ window.onPlaylistUpdated = function () {
   const newCfg = readConfig();
   if (!newCfg || !newCfg.folders) return;
 
-  // 這裡需要注意，readConfig 讀到的是 localStorage 裡的舊資料 (沒有 Blob URL)
-  // 我們必須保留目前記憶體中有 Blob URL 的 audioTracks 和 lyricsFile
-  // 但這裡簡化處理：因為 playlist.js 只是改順序，我們假設它保存時沒有破壞結構
-  // 實際上 playlist.js 存的是 filename，我們需要重新 map 回記憶體中的 blob
-
-  // 為了簡單起見，我們信任 tracks 陣列的 blobUrl 還在，只是順序變了
-  // 更好的做法是讓 playlist.js 只傳遞新的順序 index，不過目前的架構是重讀 config
-  // 所以這裡其實依賴 generateTrackListFromConfig 使用 *當前記憶體中的 config* (如果沒被覆蓋)
-  // 或者我們重新 scan? 不，重整後 blob 就不見了。
-
-  // 修正：我們使用 readConfig 取得順序，但保留當前 config 的 blob 資料
-  // 這部分比較複雜，目前的實作是 playlist.js 存檔後，這裡讀檔會導致 blob 遺失
-  // **但是**，只要使用者沒有按下 F5，瀏覽器記憶體內的 config 還是舊的嗎？
-  // 不，playlist.js 寫入 localStorage 後，這裡讀出來的是沒有 blob 的。
-  // **重要修正**：因為我們無法從 localStorage 恢復 Blob URL，
-  // 當 playlist 更新順序時，我們應該從 `window.tracks` (舊的) 裡把 Blob URL 找回來填回去。
-
   const oldTracksMap = new Map();
   tracks.forEach(t => oldTracksMap.set(t.baseName, t));
 
-  config.folders = newCfg.folders; // 更新為新順序
+  config.folders = newCfg.folders;
 
   // 將 Blob URL 填回 config
   config.folders.forEach(folder => {
@@ -237,6 +224,8 @@ function handleFolderSelect(fileList) {
   latestFiles = files;
   console.log("handleFolderSelect files:", files.length);
 
+  // 這裡不再需要強制把 folder 加入 config，因為 scanFiles 現在會自動處理新增
+  // 但保留無妨，確保邏輯一致
   const baseFolders = new Set();
   files.forEach(f => {
     const rel = f.webkitRelativePath || f.name;
@@ -244,27 +233,22 @@ function handleFolderSelect(fileList) {
     baseFolders.add(parts.length > 1 ? parts[0] : 'root');
   });
 
-  baseFolders.forEach(base => {
-    const norm = normalizePath(base);
-    if (!config.folders.some(f => normalizePath(f.path) === norm)) {
-      config.folders.push({ path: norm, tracks: [] });
-    }
-  });
-
   scanFiles(files);
   saveConfig();
   showFolderChooser(false);
 }
 
+// 【嚴重 BUG 修復】：scanFiles 現在只會更新本次輸入檔案所屬的資料夾，不會清空其他資料夾
 function scanFiles(files) {
   const validAudioExt = ['mp3', 'wav', 'flac', 'm4a', 'aac', 'ogg'];
-  const folderMaps = {};
+  const folderMaps = {}; // 存放本次掃描到的檔案結構 { "folderName": { "songName": [tracks...] } }
   const srtFiles = [];
 
-  // 1. 分類檔案
+  // 1. 解析本次輸入的檔案
   files.forEach(file => {
     const relPath = (file.webkitRelativePath || file.name).replace(/\\/g, '/');
     const parts = relPath.split('/');
+    // 如果有路徑則取第一層目錄，否則為 '' (root)
     const folder = parts.length > 1 ? parts[0] : '';
     const name = parts[parts.length - 1];
     const ext = (name.split('.').pop() || '').toLowerCase();
@@ -292,6 +276,7 @@ function scanFiles(files) {
     }
     const mainName = suffix ? nameNoExt.replace(new RegExp(`\\(${suffix}\\)$`), '').trim() : nameNoExt;
 
+    // 嘗試從現有 config 找回舊音量設定 (即使該 folder 稍後會被覆蓋，我們仍嘗試找回全域的設定)
     let oldVolume = 85;
     let oldMute = false;
     for (let folderCfg of config.folders) {
@@ -307,18 +292,32 @@ function scanFiles(files) {
 
     const blobUrl = URL.createObjectURL(file);
     const entry = { filename: name, relPath, blobUrl, volume: oldVolume, mute: oldMute, suffix };
-    const folderKey = normalizePath(folder || '');
+
+    const folderKey = normalizePath(folder || ''); // 統一路徑格式
+
     if (!folderMaps[folderKey]) folderMaps[folderKey] = {};
     if (!folderMaps[folderKey][mainName]) folderMaps[folderKey][mainName] = [];
     folderMaps[folderKey][mainName].push(entry);
   });
 
-  // 2. 更新 config.folders
-  config.folders.forEach(folderCfg => {
-    const key = normalizePath(folderCfg.path || '');
-    const map = folderMaps[key] || {};
+  // 2. 針對「本次掃描到的資料夾」進行更新
+  // 我們只迭代 folderMaps 的 key，這樣就不會動到 config 裡其他無關的資料夾
+  Object.keys(folderMaps).forEach(targetFolderKey => {
+
+    // 找找看 config 裡面有沒有這個資料夾
+    let folderCfg = config.folders.find(f => normalizePath(f.path || '') === targetFolderKey);
+
+    // 如果沒有，就新增一個
+    if (!folderCfg) {
+      folderCfg = { path: targetFolderKey, tracks: [] };
+      config.folders.push(folderCfg);
+    }
+
+    const map = folderMaps[targetFolderKey];
+    // 備份該資料夾原本的順序
     const oldOrder = (folderCfg.tracks || []).map(t => t.filename);
 
+    // 清空該資料夾的 tracks，準備重建 (因為這是「重新掃描該資料夾」的行為)
     folderCfg.tracks = [];
 
     const createTrackEntry = (mainName) => {
@@ -331,10 +330,9 @@ function scanFiles(files) {
         suffix: t.suffix
       }));
 
-      // 【字幕配對邏輯修正】
+      // 字幕配對 (放寬條件，比對本次掃描到的所有 SRT)
       let matchedSrt = null;
       let bestScore = 0;
-
       const cleanedSongName = cleanFilenameForMatching(mainName);
 
       // 放寬限制：比對所有掃描到的 SRT，不限制資料夾
@@ -349,49 +347,53 @@ function scanFiles(files) {
       });
 
       if (matchedSrt) {
-        console.log(`字幕配對: [${mainName}] <-> [${matchedSrt.slice(-12)}] (${(bestScore * 100).toFixed(0)}%)`);
+        console.log(`[${targetFolderKey}] 字幕配對: ${mainName} <-> SRT`);
       }
 
       return { filename: mainName, audioTracks, lyricsFile: matchedSrt };
     };
 
-    // A. 舊順序
+    // A. 依照舊順序加入 (如果該檔案還存在)
     oldOrder.forEach(mainName => {
       if (map[mainName]) {
         folderCfg.tracks.push(createTrackEntry(mainName));
-        delete map[mainName];
+        delete map[mainName]; // 標記已處理
       }
     });
 
-    // B. 新檔案
+    // B. 加入剩下的新檔案
     Object.keys(map).forEach(mainName => {
       folderCfg.tracks.push(createTrackEntry(mainName));
     });
   });
 
-  console.log("掃描完成，config 更新完畢");
+  console.log("掃描完成，僅更新受影響的資料夾，保留其他設定。");
   generateTrackListFromConfig();
 }
 
 function generateTrackListFromConfig() {
   const newTracks = [];
   if (!config.folders || config.folders.length === 0) return;
-  const folder = config.folders[0];
 
-  if (folder && folder.tracks) {
-    folder.tracks.forEach(t => {
-      newTracks.push({
-        baseName: t.filename,
-        audioTracks: t.audioTracks.map(at => ({ ...at })),
-        lyricsFile: t.lyricsFile
+  // 這裡要改為遍歷所有資料夾，而不只是 folders[0]
+  // 因為範本可能會新增第二個資料夾 "Sample Music"
+  config.folders.forEach(folder => {
+    if (folder && folder.tracks) {
+      folder.tracks.forEach(t => {
+        newTracks.push({
+          baseName: t.filename,
+          audioTracks: t.audioTracks.map(at => ({ ...at })),
+          lyricsFile: t.lyricsFile
+        });
       });
-    });
-  }
+    }
+  });
 
   tracks = newTracks;
   window.tracks = tracks;
   console.log("播放清單已更新，共", tracks.length, "首");
 
+  // 只有在沒有音樂物件時才初始化第一首 (避免打斷播放)
   if (tracks.length > 0 && audioElements.length === 0) {
     loadTrack(0);
   }
@@ -483,7 +485,6 @@ function loadTrack(index) {
     });
   }
 
-  // 通知歌詞模組更新
   if (window.LyricsUI && window.LyricsUI.isLyricsOpen()) {
     window.LyricsUI.reloadLyrics();
   }
@@ -516,13 +517,19 @@ function onTrackEnd() {
 
 function persistVolumeSetting(baseName, filename, volume) {
   try {
-    const folder = config.folders[0];
-    if (!folder || !folder.tracks) return;
-    const tr = folder.tracks.find(t => t.filename === baseName);
-    if (!tr) return;
-    const at = tr.audioTracks.find(a => a.filename === filename);
-    if (!at) return;
-    at.volume = volume; at.mute = false;
+    // 修正：需遍歷所有 folder 找對應的 track，不只是 folders[0]
+    config.folders.forEach(folder => {
+      if (folder.tracks) {
+        const tr = folder.tracks.find(t => t.filename === baseName);
+        if (tr) {
+          const at = tr.audioTracks.find(a => a.filename === filename);
+          if (at) {
+            at.volume = volume;
+            at.mute = false;
+          }
+        }
+      }
+    });
     saveConfig();
   } catch (e) { console.error(e); }
 }

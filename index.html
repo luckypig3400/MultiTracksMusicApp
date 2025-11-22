@@ -100,6 +100,7 @@
   }
   #folder-chooser p { margin:0 0 8px 0; }
   #folder-chooser input[type=file] { width:100%; }
+  .hint-text { font-size: 0.9rem; color: #666; margin-top: 4px; }
 
   /* 小的閃爍樣式 */
   .progress-flash { background-color: rgba(255,0,0,0.6) !important; transition: background-color 0.1s; }
@@ -139,6 +140,7 @@
 
     <div id="folder-chooser" role="dialog" aria-modal="true">
       <p>首次使用請選擇一或多個音樂資料夾（會掃描資料夾內音訊檔案與歌詞）</p>
+      <p class="hint-text">【如果沒有UVR5音訊檔案的話，可以到設定頁面載入範例音訊檔案，以及歌詞檔案】</p>
       <input type="file" id="folder-input" webkitdirectory directory multiple />
       <div style="margin-top:8px; text-align:right;">
         <button id="folder-ok">關閉</button>
@@ -148,7 +150,7 @@
 
   <script src="app.js"></script>
   <script src="playlist.js"></script>
-  <script src="lyrics.js"></script> <!-- 新增歌詞模組 -->
+  <script src="lyrics.js"></script>
   <script src="setting.js"></script>
   <script>
     document.addEventListener('DOMContentLoaded', () => {

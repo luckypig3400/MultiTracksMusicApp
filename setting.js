@@ -1,4 +1,29 @@
-// setting.js — 修正版：改為 Modal 形式，支援不中斷播放，並新增強制重整功能
+// setting.js — 修正版：改為 Modal 形式，支援不中斷播放，並新增強制重整功能與範本載入
+
+// 定義範本檔案列表
+const SAMPLE_BASE_URL = "audio/sample/";
+const SAMPLE_FILES = [
+  // 歌曲 1: 栞 (13_997)
+  "13_997.栞_(Bass).mp3",
+  "13_997.栞_(Drums).mp3",
+  "13_997.栞_(Other).mp3",
+  "13_997.栞_(Vocals).mp3",
+  "栞.srt",
+
+  // 歌曲 2: 春日影 (15_998)
+  "15_998.春日影 - From THE FIRST TAKE_(Bass).mp3",
+  "15_998.春日影 - From THE FIRST TAKE_(Drums).mp3",
+  "15_998.春日影 - From THE FIRST TAKE_(Other).mp3",
+  "15_998.春日影 - From THE FIRST TAKE_(Vocals).mp3",
+  "春日影 - From THE FIRST TAKE.srt",
+
+  // 歌曲 3: 迷星叫 (1_999)
+  "1_999.迷星叫_(Bass).mp3",
+  "1_999.迷星叫_(Drums).mp3",
+  "1_999.迷星叫_(Other).mp3",
+  "1_999.迷星叫_(Vocals).mp3",
+  "迷星叫.srt"
+];
 
 // 封裝主題管理模組 (全域可存取)
 window.ThemeManager = (() => {
@@ -134,6 +159,15 @@ window.SettingsUI = (() => {
     const btnTheme = createButton('btn-theme-toggle', '<i class="fa-solid fa-moon"></i>', () => ThemeManager.toggleTheme(btnTheme));
     btnTheme.title = "切換主題";
 
+    // 範本相關按鈕
+    const btnLoadSample = createButton('btn-load-sample', '載入音樂範本', loadSampleMusic);
+    btnLoadSample.style.color = '#2e7d32'; // 綠色
+    btnLoadSample.style.borderColor = '#2e7d32';
+
+    const btnRemoveSample = createButton('btn-remove-sample', '刪除範本資料', removeSampleMusic);
+    btnRemoveSample.style.color = '#e65100'; // 橘色
+    btnRemoveSample.style.borderColor = '#e65100';
+
     // 強制重整按鈕
     const btnForceReload = createButton('btn-force-reload', '強制重整 (Ctrl+F5)', forceReload);
     btnForceReload.style.color = '#d32f2f'; // 紅色警告色
@@ -144,6 +178,8 @@ window.SettingsUI = (() => {
     btnContainer.appendChild(btnLoad);
     btnContainer.appendChild(btnClear);
     btnContainer.appendChild(btnTheme);
+    btnContainer.appendChild(btnLoadSample);
+    btnContainer.appendChild(btnRemoveSample);
     btnContainer.appendChild(btnForceReload);
 
     // 建立 Textarea
@@ -171,6 +207,71 @@ window.SettingsUI = (() => {
     btn.innerHTML = text;
     btn.addEventListener('click', onClick);
     return btn;
+  }
+
+  async function loadSampleMusic() {
+    if (!confirm('確定要載入範本音樂檔案嗎？(需連網下載)\n\n注意：範本檔案將會被放入「Sample Music」資料夾中，不會覆蓋您現有的本地檔案。')) return;
+
+    const loadedFiles = [];
+    const fileObjects = [];
+
+    try {
+      const promises = SAMPLE_FILES.map(async (filename) => {
+        const response = await fetch(SAMPLE_BASE_URL + filename);
+        if (!response.ok) throw new Error(`Failed to load ${filename}`);
+        const blob = await response.blob();
+        // 【關鍵修正】：手動加上 "Sample Music/" 路徑前綴
+        // 這樣 app.js 的 scanFiles 就會把這些檔案歸類到 Sample Music 資料夾，不會影響 root 資料夾
+        const file = new File([blob], "Sample Music/" + filename, { type: blob.type });
+        fileObjects.push(file);
+        loadedFiles.push(filename);
+      });
+
+      await Promise.all(promises);
+
+      if (fileObjects.length > 0 && window.AppAudioControl) {
+        // 呼叫 app.js 提供的介面處理檔案
+        window.AppAudioControl.loadFiles(fileObjects);
+        alert(`成功載入以下範本檔案：\n\n${loadedFiles.join('\n')}`);
+        loadConfigToTextarea(); // 更新顯示的 JSON
+      } else {
+        alert("無法載入範本檔案。");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("載入範本時發生錯誤，請檢查網路或檔案路徑。");
+    }
+  }
+
+  function removeSampleMusic() {
+    if (!confirm('確定要移除範本音樂資料嗎？\n(將會移除「Sample Music」資料夾)')) return;
+
+    try {
+      const config = JSON.parse(localStorage.getItem('config') || '{}');
+      if (!config.folders) {
+        alert("設定檔中無資料。");
+        return;
+      }
+
+      // 直接移除 path 為 "Sample Music" 的資料夾
+      const originalLength = config.folders.length;
+      config.folders = config.folders.filter(f => f.path !== "Sample Music");
+
+      if (config.folders.length < originalLength) {
+        localStorage.setItem('config', JSON.stringify(config));
+        loadConfigToTextarea();
+        // 觸發 App 更新
+        if (window.onPlaylistUpdated) window.onPlaylistUpdated();
+
+        alert("已移除範本資料夾。");
+      } else {
+        alert("未找到範本資料夾 (Sample Music)。");
+      }
+
+    } catch (e) {
+      console.error(e);
+      alert("移除失敗。");
+    }
   }
 
   function loadConfigToTextarea() {
