@@ -117,9 +117,16 @@ async function initializeApp() {
     },
     getConfig: () => config,
     saveConfig: saveConfig,
+    // 【新增】：允許 setting.js 呼叫此函式載入範本檔案
     loadFiles: (files) => {
       scanFiles(files);
       saveConfig();
+    },
+    // 新增：切換資料夾並重整清單
+    switchFolder: (path) => {
+      config.activeFolderPath = path;
+      saveConfig();
+      generateTrackListFromConfig();
     }
   };
 
@@ -137,7 +144,10 @@ window.onPlaylistUpdated = function () {
   const oldTracksMap = new Map();
   tracks.forEach(t => oldTracksMap.set(t.baseName, t));
 
-  config.folders = newCfg.folders;
+  // 保留 activeFolderPath
+  const currentActive = config.activeFolderPath;
+  config = newCfg; // 整個替換
+  if (!config.activeFolderPath && currentActive) config.activeFolderPath = currentActive;
 
   // 將 Blob URL 填回 config
   config.folders.forEach(folder => {
@@ -224,8 +234,6 @@ function handleFolderSelect(fileList) {
   latestFiles = files;
   console.log("handleFolderSelect files:", files.length);
 
-  // 這裡不再需要強制把 folder 加入 config，因為 scanFiles 現在會自動處理新增
-  // 但保留無妨，確保邏輯一致
   const baseFolders = new Set();
   files.forEach(f => {
     const rel = f.webkitRelativePath || f.name;
@@ -238,10 +246,10 @@ function handleFolderSelect(fileList) {
   showFolderChooser(false);
 }
 
-// 【嚴重 BUG 修復】：scanFiles 現在只會更新本次輸入檔案所屬的資料夾，不會清空其他資料夾
+// 【BUG 修復】：scanFiles 必須在有新檔案時，強制更新 activeFolderPath
 function scanFiles(files) {
   const validAudioExt = ['mp3', 'wav', 'flac', 'm4a', 'aac', 'ogg'];
-  const folderMaps = {}; // 存放本次掃描到的檔案結構 { "folderName": { "songName": [tracks...] } }
+  const folderMaps = {}; // 存放本次掃描到的檔案結構
   const srtFiles = [];
 
   // 1. 解析本次輸入的檔案
@@ -276,7 +284,7 @@ function scanFiles(files) {
     }
     const mainName = suffix ? nameNoExt.replace(new RegExp(`\\(${suffix}\\)$`), '').trim() : nameNoExt;
 
-    // 嘗試從現有 config 找回舊音量設定 (即使該 folder 稍後會被覆蓋，我們仍嘗試找回全域的設定)
+    // 嘗試從現有 config 找回舊音量設定
     let oldVolume = 85;
     let oldMute = false;
     for (let folderCfg of config.folders) {
@@ -353,7 +361,7 @@ function scanFiles(files) {
       return { filename: mainName, audioTracks, lyricsFile: matchedSrt };
     };
 
-    // A. 依照舊順序加入 (如果該檔案還存在)
+    // A. 依照舊順序加入
     oldOrder.forEach(mainName => {
       if (map[mainName]) {
         folderCfg.tracks.push(createTrackEntry(mainName));
@@ -367,35 +375,64 @@ function scanFiles(files) {
     });
   });
 
-  console.log("掃描完成，僅更新受影響的資料夾，保留其他設定。");
+  // 【關鍵修正】：如果本次掃描有結果，強制將 activeFolderPath 切換到第一個被更新的資料夾
+  // 這解決了「原本停留在 Sample Music，但使用者選擇了本地資料夾後，播放器還是顯示空的 Sample Music」的問題
+  const scannedFolderKeys = Object.keys(folderMaps);
+  if (scannedFolderKeys.length > 0) {
+    // 優先選擇第一個掃描到的資料夾
+    config.activeFolderPath = scannedFolderKeys[0];
+    console.log(`Active Folder Switched to: [${config.activeFolderPath}]`);
+  } else if (!config.activeFolderPath && config.folders.length > 0) {
+    // 如果沒有掃描到東西且沒有當前資料夾，預設選第一個
+    config.activeFolderPath = config.folders[0].path;
+  }
+
+  console.log("掃描完成，Active Folder:", config.activeFolderPath);
   generateTrackListFromConfig();
 }
 
+// 只載入 config.activeFolderPath 指定的資料夾
 function generateTrackListFromConfig() {
   const newTracks = [];
-  if (!config.folders || config.folders.length === 0) return;
 
-  // 這裡要改為遍歷所有資料夾，而不只是 folders[0]
-  // 因為範本可能會新增第二個資料夾 "Sample Music"
-  config.folders.forEach(folder => {
-    if (folder && folder.tracks) {
-      folder.tracks.forEach(t => {
-        newTracks.push({
-          baseName: t.filename,
-          audioTracks: t.audioTracks.map(at => ({ ...at })),
-          lyricsFile: t.lyricsFile
-        });
+  if (!config.folders || config.folders.length === 0) {
+    tracks = [];
+    return;
+  }
+
+  // 1. 確定要顯示哪個資料夾
+  let targetFolder = config.folders.find(f => normalizePath(f.path) === normalizePath(config.activeFolderPath));
+
+  // 如果找不到目標資料夾(可能被刪除了)，預設切回第一個
+  if (!targetFolder && config.folders.length > 0) {
+    targetFolder = config.folders[0];
+    config.activeFolderPath = targetFolder.path;
+  }
+
+  if (targetFolder && targetFolder.tracks) {
+    targetFolder.tracks.forEach(t => {
+      newTracks.push({
+        baseName: t.filename,
+        audioTracks: t.audioTracks.map(at => ({ ...at })),
+        lyricsFile: t.lyricsFile
       });
-    }
-  });
+    });
+  }
 
   tracks = newTracks;
-  window.tracks = tracks;
-  console.log("播放清單已更新，共", tracks.length, "首");
+  window.tracks = tracks; // 同步全域
 
-  // 只有在沒有音樂物件時才初始化第一首 (避免打斷播放)
+  console.log(`播放清單已更新 [${config.activeFolderPath}]，共 ${tracks.length} 首`);
+
+  // 重置索引並載入第一首 (避免重整後不自動準備播放)
   if (tracks.length > 0 && audioElements.length === 0) {
     loadTrack(0);
+  }
+
+  // 觸發播放清單UI更新
+  if (window.PlaylistUI && document.getElementById('playlist-modal') && document.getElementById('playlist-modal').style.display !== 'none') {
+    window.PlaylistUI.renderList();
+    window.PlaylistUI.updateHeaderTitle();
   }
 }
 
@@ -479,7 +516,7 @@ function loadTrack(index) {
       audioElements.forEach((a, i) => { if (a !== first) a.play().catch(() => { }); });
       startProgressLoop();
       startPlay();
-    }).catch(err => console.warn("播放失敗:", err));
+    }).catch(err => alert(`播放失敗 ，可能是切換到本次未載入的資料夾或檔案連結失效\r\n建議重新載入網頁並重選資料夾(或到設定重新載入音樂範本)\r\n詳細訊息:${err}`,));
     first.addEventListener('pause', () => {
       if (syncIntervalId) clearInterval(syncIntervalId);
     });
@@ -517,7 +554,7 @@ function onTrackEnd() {
 
 function persistVolumeSetting(baseName, filename, volume) {
   try {
-    // 修正：需遍歷所有 folder 找對應的 track，不只是 folders[0]
+    // 修正：需遍歷所有 folder 找對應的 track
     config.folders.forEach(folder => {
       if (folder.tracks) {
         const tr = folder.tracks.find(t => t.filename === baseName);

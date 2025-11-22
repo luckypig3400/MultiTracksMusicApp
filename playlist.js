@@ -1,4 +1,4 @@
-// playlist.js — 修正版：加入 CSS 樣式美化按鈕、實作手機觸控拖曳排序 (Touch API)
+// playlist.js — 修正版：新增切換資料夾功能，並根據 activeFolderPath 顯示清單
 
 (function () {
   let modal = null;
@@ -11,30 +11,54 @@
   function log(...args) { console.log('[Playlist]', ...args); }
 
   function getConfig() {
+    // 優先使用 App 記憶體中的 config (因為有 Blob URL)，若無則讀 localStorage
+    if (window.AppAudioControl) return window.AppAudioControl.getConfig();
     const raw = localStorage.getItem('config');
     return raw ? JSON.parse(raw) : { folders: [] };
   }
 
   function saveConfig(cfg) {
-    localStorage.setItem('config', JSON.stringify(cfg));
-    log('Config saved to localStorage directly.');
+    // 通知 App 保存
+    if (window.AppAudioControl) window.AppAudioControl.saveConfig();
+    else localStorage.setItem('config', JSON.stringify(cfg));
   }
 
   function loadTracksFromStorage() {
-    const cfg = getConfig();
-    if (!cfg.folders.length) return [];
-    const folder = cfg.folders[0];
-    currentTracks = folder.tracks.map(t => ({ baseName: t.filename, audioTracks: t.audioTracks }));
-    log('Loaded', currentTracks.length, 'tracks');
+    // 直接使用 window.tracks，因為 app.js 已經根據 activeFolderPath 生成好了
+    if (window.tracks) {
+      currentTracks = window.tracks.map(t => ({ baseName: t.baseName, audioTracks: t.audioTracks }));
+      log('Loaded tracks from window.tracks:', currentTracks.length);
+    } else {
+      currentTracks = [];
+    }
     return currentTracks;
   }
 
   function persistTracks() {
+    // 將 currentTracks 的順序寫回 config 中對應的 activeFolder
     const cfg = getConfig();
-    if (!cfg.folders.length) cfg.folders = [{ path: 'Unknown', tracks: [] }];
-    cfg.folders[0].tracks = currentTracks.map(t => ({ filename: t.baseName, audioTracks: t.audioTracks }));
-    saveConfig(cfg);
-    log('persistTracks: saved order for', currentTracks.length, 'tracks');
+    const activePath = cfg.activeFolderPath;
+
+    if (!activePath || !cfg.folders) return;
+
+    const folder = cfg.folders.find(f => {
+      // 簡單正規化比對
+      const p1 = f.path.replace(/\\/g, '/').replace(/\/+$/, '');
+      const p2 = activePath.replace(/\\/g, '/').replace(/\/+$/, '');
+      return p1 === p2;
+    });
+
+    if (folder) {
+      // 這裡比較 tricky，因為 currentTracks 只有 baseName，缺少 lyricsFile 等資訊
+      // 我們需要從 folder.tracks 原本的資料中，依照 currentTracks 的順序重新排列
+      const trackMap = new Map();
+      folder.tracks.forEach(t => trackMap.set(t.filename, t));
+
+      folder.tracks = currentTracks.map(ct => trackMap.get(ct.baseName)).filter(t => t);
+
+      saveConfig(cfg);
+      log('persistTracks: saved order for', folder.path);
+    }
   }
 
   function openPlaylist() {
@@ -43,14 +67,12 @@
 
     // 同步主題：開啟時檢查 localStorage，若為 dark 則加上 class
     const theme = localStorage.getItem('appTheme') || 'light';
-    if (theme === 'dark') {
-      modal.classList.add('vscode-dark');
-    } else {
-      modal.classList.remove('vscode-dark');
-    }
+    if (theme === 'dark') modal.classList.add('vscode-dark');
+    else modal.classList.remove('vscode-dark');
 
     loadTracksFromStorage();
     renderList();
+    updateHeaderTitle(); // 更新標題顯示當前資料夾
     modal.style.display = 'flex';
   }
 
@@ -58,6 +80,14 @@
     if (!modal) return;
     modal.style.display = 'none';
     log('closePlaylist');
+  }
+
+  // 暴露給 app.js 使用，當切換資料夾時更新標題
+  function updateHeaderTitle() {
+    const titleEl = document.getElementById('playlist-folder-name');
+    if (!titleEl) return;
+    const cfg = getConfig();
+    titleEl.innerText = cfg.activeFolderPath || '未選擇資料夾';
   }
 
   function buildModal() {
@@ -68,111 +98,173 @@
       background: 'rgba(250,250,250,0.98)', display: 'none', flexDirection: 'column', zIndex: 10000
     });
 
-    // 【新增 CSS】美化按鈕與列表
     const style = document.createElement('style');
     style.textContent = `
-      /* 按鈕樣式，比照設定頁面 */
+      #playlist-header {
+          padding: 8px 12px; border-bottom: 1px solid rgba(0,0,0,0.06);
+          display: flex; flex-direction: column; gap: 8px;
+      }
+      .playlist-controls { display: flex; justify-content: space-between; align-items: center; }
+      .btn-group { display: flex; gap: 8px; }
       #playlist-header button {
-        padding: 8px 12px;
-        font-size: 1rem;
-        border-radius: 8px;
-        border: 1px solid #ccc;
-        background: white;
-        cursor: pointer;
+        padding: 8px 12px; font-size: 1rem; border-radius: 8px;
+        border: 1px solid #ccc; background: white; cursor: pointer;
       }
-      /* 深色模式按鈕適配 (需配合 vscode-dark class) */
-      .vscode-dark #playlist-modal {
-        background-color: #1e1e1e !important;
-        color: #d4d4d4 !important;
+      /* Folder Info Block */
+      #playlist-folder-info {
+          padding: 4px 8px; background: rgba(0,0,0,0.03); border-radius: 4px;
+          display: flex; align-items: center; justify-content: center;
+          min-height: 30px;
       }
-      .vscode-dark #playlist-header button {
-        background-color: #333 !important;
-        color: #ddd !important;
-        border-color: #555 !important;
+      #playlist-folder-name {
+          font-size: 0.9rem; font-weight: bold; color: #555; word-break: break-all;
       }
-      /* 清單項目樣式 */
-      .playlist-item {
-        display: flex; 
-        align-items: center; 
-        padding: 12px 8px; /* 增加高度方便點擊 */
-        border-bottom: 1px solid #eee;
-        background-color: inherit;
-        transition: background-color 0.2s;
-      }
-      .vscode-dark .playlist-item {
-        border-bottom: 1px solid #333;
-      }
-      /* 拖曳時的視覺效果 */
-      .playlist-item.dragging {
-        opacity: 0.5;
-        background-color: #ddd;
-      }
-      .vscode-dark .playlist-item.dragging {
-        background-color: #444;
-      }
-      /* 拖曳手柄 */
-      .drag-handle {
-        width: 15%;
-        text-align: center;
-        cursor: grab;
-        font-size: 1.2rem;
-        color: #888;
-        padding: 4px; /* 增加觸控面積 */
-        user-select: none;
-      }
+      
+      .vscode-dark #playlist-modal { background-color: #1e1e1e !important; color: #d4d4d4 !important; }
+      .vscode-dark #playlist-header button { background-color: #333 !important; color: #ddd !important; border-color: #555 !important; }
+      .vscode-dark #playlist-folder-info { background: rgba(255,255,255,0.05); }
+      .vscode-dark #playlist-folder-name { color: #bbb; }
+      
+      .playlist-item { display: flex; align-items: center; padding: 12px 8px; border-bottom: 1px solid #eee; background-color: inherit; }
+      .vscode-dark .playlist-item { border-bottom: 1px solid #333; }
+      .playlist-item.dragging { opacity: 0.5; background-color: #ddd; }
+      .vscode-dark .playlist-item.dragging { background-color: #444; }
+      .drag-handle { width: 15%; text-align: center; cursor: grab; font-size: 1.2rem; color: #888; padding: 4px; user-select: none; }
     `;
     modal.appendChild(style);
 
     const header = document.createElement('div');
     header.id = 'playlist-header';
-    Object.assign(header.style, {
-      height: '10%', minHeight: '60px', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-      padding: '8px 12px', boxSizing: 'border-box', borderBottom: '1px solid rgba(0,0,0,0.06)'
-    });
+
+    // 上排按鈕
+    const controls = document.createElement('div');
+    controls.className = 'playlist-controls';
 
     const leftGroup = document.createElement('div');
-    leftGroup.style.display = 'flex';
-    leftGroup.style.gap = '8px';
+    leftGroup.className = 'btn-group';
 
     const btnSort = document.createElement('button');
     btnSort.innerText = 'A↕Z';
-    btnSort.addEventListener('click', () => {
-      sortAsc = !sortAsc;
-      sortList();
-      persistTracks();
-      syncAppTracks();
-      renderList();
-    });
-    leftGroup.appendChild(btnSort);
+    btnSort.onclick = () => { sortAsc = !sortAsc; sortList(); persistTracks(); syncAppTracks(); renderList(); };
 
     const btnShuffle = document.createElement('button');
-    btnShuffle.innerHTML = '<i class="fa-solid fa-shuffle">';
-    btnShuffle.addEventListener('click', () => {
-      shuffleList();
-      persistTracks();
-      syncAppTracks();
-      renderList();
-    });
+    btnShuffle.innerHTML = '<i class="fa-solid fa-shuffle"></i>';
+    btnShuffle.onclick = () => { shuffleList(); persistTracks(); syncAppTracks(); renderList(); };
+
+    // 新增：切換資料夾按鈕
+    const btnSwitchFolder = document.createElement('button');
+    btnSwitchFolder.innerHTML = '<i class="fa-solid fa-left-right"></i><i class="fa-solid fa-folder-open"></i>';
+    btnSwitchFolder.title = "切換資料夾";
+    btnSwitchFolder.onclick = showFolderSelectionModal;
+
+    leftGroup.appendChild(btnSort);
     leftGroup.appendChild(btnShuffle);
+    leftGroup.appendChild(btnSwitchFolder);
 
     const btnClose = document.createElement('button');
-    btnClose.innerText = 'Save & Close ✖';
-    btnClose.addEventListener('click', () => {
-      persistTracks();
-      syncAppTracks();
-      closePlaylist();
-    });
+    btnClose.innerHTML = '<i class="fa-solid fa-arrow-right-from-bracket"></i>'; // 改圖示
+    btnClose.title = "儲存並關閉";
+    btnClose.onclick = () => { persistTracks(); syncAppTracks(); closePlaylist(); };
 
-    header.appendChild(leftGroup);
-    header.appendChild(btnClose);
+    controls.appendChild(leftGroup);
+    controls.appendChild(btnClose);
+
+    // 下排：資料夾資訊
+    const folderInfo = document.createElement('div');
+    folderInfo.id = 'playlist-folder-info';
+    const folderName = document.createElement('div');
+    folderName.id = 'playlist-folder-name';
+    folderName.innerText = 'Loading...';
+    folderInfo.appendChild(folderName);
+
+    header.appendChild(controls);
+    header.appendChild(folderInfo);
 
     const list = document.createElement('div');
     list.id = 'playlist-list';
-    Object.assign(list.style, { height: '90%', overflowY: 'auto' });
+    Object.assign(list.style, { height: 'calc(100% - 110px)', overflowY: 'auto' });
 
     modal.appendChild(header);
     modal.appendChild(list);
     document.body.appendChild(modal);
+  }
+
+  function showFolderSelectionModal() {
+    const cfg = getConfig();
+    if (!cfg.folders || cfg.folders.length === 0) {
+      alert("你從未選擇過任何資料夾，或是載入範本音樂");
+      return;
+    }
+
+    // 建立簡單的選擇 Modal
+    const overlay = document.createElement('div');
+    Object.assign(overlay.style, {
+      position: 'fixed', top: 0, left: 0, width: '100%', height: '100%',
+      background: 'rgba(0,0,0,0.5)', zIndex: 10002, display: 'flex',
+      alignItems: 'center', justifyContent: 'center'
+    });
+
+    const panel = document.createElement('div');
+    Object.assign(panel.style, {
+      width: '80%', height: '80%', background: 'white', borderRadius: '8px',
+      padding: '16px', display: 'flex', flexDirection: 'column', gap: '8px',
+      boxShadow: '0 4px 12px rgba(0,0,0,0.2)'
+    });
+
+    // 深色模式適配
+    if (document.body.classList.contains('vscode-dark') || modal.classList.contains('vscode-dark')) {
+      panel.style.background = '#252526';
+      panel.style.color = '#d4d4d4';
+    }
+
+    const title = document.createElement('h3');
+    title.innerText = '選擇資料夾';
+    title.style.margin = '0 0 8px 0';
+    title.style.textAlign = 'center';
+
+    const listContainer = document.createElement('div');
+    Object.assign(listContainer.style, {
+      flex: 1, overflowY: 'auto', border: '1px solid #ccc', borderRadius: '4px'
+    });
+
+    cfg.folders.forEach(folder => {
+      const item = document.createElement('div');
+      item.innerText = folder.path || '(未命名資料夾)';
+      Object.assign(item.style, {
+        padding: '12px', cursor: 'pointer', borderBottom: '1px solid #eee'
+      });
+
+      if (modal.classList.contains('vscode-dark')) item.style.borderBottom = '1px solid #444';
+
+      // 高亮當前資料夾
+      if (folder.path === cfg.activeFolderPath) {
+        item.style.background = modal.classList.contains('vscode-dark') ? '#37373d' : '#e3f2fd';
+        item.style.fontWeight = 'bold';
+      }
+
+      item.onclick = () => {
+        if (window.AppAudioControl) {
+          window.AppAudioControl.switchFolder(folder.path);
+          // 更新 Playlist UI
+          loadTracksFromStorage(); // 重新從 window.tracks 載入
+          renderList();
+          updateHeaderTitle();
+        }
+        document.body.removeChild(overlay);
+      };
+      listContainer.appendChild(item);
+    });
+
+    const closeBtn = document.createElement('button');
+    closeBtn.innerText = '取消';
+    closeBtn.style.padding = '8px';
+    closeBtn.onclick = () => document.body.removeChild(overlay);
+
+    panel.appendChild(title);
+    panel.appendChild(listContainer);
+    panel.appendChild(closeBtn);
+    overlay.appendChild(panel);
+    document.body.appendChild(overlay);
   }
 
   function renderList() {
@@ -203,9 +295,6 @@
           const realIndex = window.tracks.findIndex(wt => wt.baseName === t.baseName);
           if (realIndex >= 0) {
             window.loadTrack(realIndex);
-            log('loadTrack executed for', t.baseName, 'at index', realIndex);
-          } else {
-            log('loadTrack: could not find', t.baseName, 'in window.tracks');
           }
         }
         closePlaylist();
@@ -220,21 +309,16 @@
       // ==========================================
       item.addEventListener('dragstart', e => {
         e.dataTransfer.setData('text/plain', i);
-        e.dataTransfer.effectAllowed = 'move';
         item.classList.add('dragging');
       });
-      item.addEventListener('dragend', () => {
-        item.classList.remove('dragging');
-      });
+      item.addEventListener('dragend', () => item.classList.remove('dragging'));
       item.addEventListener('dragover', e => e.preventDefault());
       item.addEventListener('drop', e => {
         e.preventDefault();
         const from = parseInt(e.dataTransfer.getData('text/plain'));
         const to = i;
         if (from === to || isNaN(from)) return;
-        const moved = currentTracks[from];
         reorderArray(currentTracks, from, to);
-        log(`[PC] "${moved.baseName}" 排序從 ${from} 變成 ${to}`);
         persistTracks();
         syncAppTracks();
         renderList();
@@ -254,13 +338,7 @@
       drag.addEventListener('touchmove', (e) => {
         e.preventDefault(); // 持續防止滾動
         const touch = e.touches[0];
-
-        // 取得手指目前位置下方的元素
-        const target = document.elementFromPoint(touch.clientX, touch.clientY);
-        // 找到該元素所屬的 playlist-item
-        const row = target ? target.closest('.playlist-item') : null;
-
-        // 這裡可以加入視覺回饋，例如高亮目標行 (目前先省略以保持效能)
+        // 視覺回饋可選，目前保持簡潔
       }, { passive: false });
 
       drag.addEventListener('touchend', (e) => {
@@ -274,9 +352,7 @@
         if (row && row.dataset.index !== undefined) {
           const toIndex = parseInt(row.dataset.index);
           if (touchStartIndex !== -1 && toIndex !== -1 && touchStartIndex !== toIndex) {
-            const moved = currentTracks[touchStartIndex];
             reorderArray(currentTracks, touchStartIndex, toIndex);
-            log(`[Mobile] "${moved.baseName}" 排序從 ${touchStartIndex} 變成 ${toIndex}`);
             persistTracks();
             syncAppTracks();
             renderList();
@@ -289,8 +365,6 @@
       item.appendChild(drag);
       list.appendChild(item);
     });
-
-    log('renderList complete, count =', currentTracks.length);
   }
 
   function reorderArray(arr, from, to) {
@@ -302,14 +376,10 @@
   function parseSmartSortKey(name) {
     const underscoreIndex = name.indexOf('_');
     let processedName = name;
-    if (underscoreIndex !== -1) {
-      processedName = name.substring(underscoreIndex + 1);
-    }
+    if (underscoreIndex !== -1) processedName = name.substring(underscoreIndex + 1);
     const match = processedName.match(/^(\d+)\./);
     let number = 999;
-    if (match && match[1]) {
-      number = parseInt(match[1], 10);
-    }
+    if (match && match[1]) number = parseInt(match[1], 10);
     return { original: name, processed: processedName, number: number };
   }
 
@@ -317,16 +387,13 @@
     currentTracks.sort((a, b) => {
       const keyA = parseSmartSortKey(a.baseName);
       const keyB = parseSmartSortKey(b.baseName);
-      if (keyA.number !== keyB.number) {
-        return sortAsc ? (keyA.number - keyB.number) : (keyB.number - keyA.number);
-      }
+      if (keyA.number !== keyB.number) return sortAsc ? (keyA.number - keyB.number) : (keyB.number - keyA.number);
       const strA = keyA.processed.toLowerCase();
       const strB = keyB.processed.toLowerCase();
       if (strA < strB) return sortAsc ? -1 : 1;
       if (strA > strB) return sortAsc ? 1 : -1;
       return 0;
     });
-    log('sortList done, sortAsc =', sortAsc);
   }
 
   function shuffleList() {
@@ -334,15 +401,10 @@
       const j = Math.floor(Math.random() * (i + 1));
       [currentTracks[i], currentTracks[j]] = [currentTracks[j], currentTracks[i]];
     }
-    log('shuffleList done');
   }
 
   function syncAppTracks() {
-    if (typeof window.onPlaylistUpdated === 'function') {
-      window.onPlaylistUpdated();
-    } else {
-      log('syncAppTracks: window.onPlaylistUpdated not found!');
-    }
+    if (typeof window.onPlaylistUpdated === 'function') window.onPlaylistUpdated();
   }
 
   document.addEventListener('DOMContentLoaded', () => {
@@ -350,5 +412,6 @@
     if (btn) btn.addEventListener('click', e => { e.preventDefault(); openPlaylist(); });
   });
 
-  window.PlaylistUI = { openPlaylist, renderList, loadTracksFromStorage };
+  // 公開 renderList 與 updateHeaderTitle 供 app.js 呼叫
+  window.PlaylistUI = { openPlaylist, renderList, loadTracksFromStorage, updateHeaderTitle };
 })();

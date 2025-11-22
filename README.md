@@ -204,7 +204,7 @@ Microsoft Windows [版本 10.0.26100.6899]
 dir提供檔案清單
 ```
 
-#### 2nd 只修復好設定被清除的問題而已，測試音樂檔案還是無法載入播放
+#### 2nd OK!只是測試音樂檔案載入後如果以前有載入過資料夾，就不會自動播放而需要手動下一首首切換，因為不會顯示在播放清單中
 `附上本專案所有程式碼文件，排除vscode和git設定以及 需求.txt`
 哇出現bug了! 而且蠻嚴重的，目前遇到的問題是，載入範例檔案后，無法播放OAO
 我目前測試的網址是http://127.0.0.1:5501/
@@ -213,3 +213,144 @@ dir提供檔案清單
 這邊再次提供目前所有的程式碼檔案給你，目前的版本都是你剛才修改過的
 這次請仔細思考之后再開始寫程式謝謝
 
+### 請Gemini 3 Pro預覽版修復測試音樂不會顯示在播放清單中的bug與新增資料夾切換按鈕
+#### 1st 出現很酷的bug!!! 上次載入測試音樂，重整網頁後這次手動選擇並載入的資料夾無法播放了(因仍停在上次的Active Folder: Sample Music)
+`附上本專案所有程式碼文件，排除vscode和git設定以及 需求.txt`
+你剛才修改的那版程式碼，已經修復好設定被清除的問題，測試音樂檔案也可以被正確載入播放了!
+不過我又發現一個很細緻的bug，就是當我沒有選擇要載入的資料夾，直接把選擇資料夾的提示框關閉，
+然後直接到設定按下載入範本音樂檔案按鈕的時候，我發現回到播放清單頁面會發現裡面的歌曲，
+都是我之前選擇資料夾時留下的歌曲順序的設定，反而載入的範本資料並沒有顯示在播放清單中，(不過一直切換下一首歌還是可以找到載入的範例音樂，並且正常播放)
+但是當我到無痕模式嘗試時，範本音樂會正確的被載入並直接播放，我很仔細的查詢問題，目前推測是config內的path設定造成的
+(我最下面有貼一小部分目前config的內容你再留意path的資料值)
+我有想到一個解決方法，就是在播放清單介面裡面，在隨機按鈕的旁邊新增一個按鈕裡面用這2個圖示組合在一起的按鈕
+<i class="fa-solid fa-left-right"></i><i class="fa-solid fa-folder-open"></i>
+代表切換資料夾的意思，並且目前的Save & Close按鈕名稱直接改成下方圖示(因為排序播放清單都會自動保存順序)
+<i class="fa-solid fa-arrow-right-from-bracket"></i>
+然後這些按鈕的下方與清單之間請加上一個與按鈕區塊同高的區塊顯示H3標題，顯示目前清單的資料夾(path就好)名稱(所以playlist的清單高度要自動的變小)
+當按下切換資料夾這個按鈕後，會彈出一個長寬各占螢幕長寬80%的彈出視窗，裡面有曾經載入過的資料夾(path)可以選擇(也要可以捲動，怕之後載入超多不同資料夾)
+無需有離開的按鈕，點選任一個資料夾(包含當前選中的)，就會自行切換到那個資料夾的清單內容("path": "Sample Music"也當作是一個資料夾)
+為了防呆如果目前的設定檔內一個資料夾都沒有的話，就會讓這個切換資料夾的按鈕打不開，然後跳出"你從未選擇過任何資料夾，或是載入範本音樂"的訊息
+我再次把程式碼都附上來給你，請你仔細思考後再開始寫程式，希望這次當我沒有選擇資料夾，
+而有去設定頁面按按鈕載入，或是之前有載入過範本音樂還沒刪除，會將我提供的測試檔案被載入直接播放
+以防萬一，請你在載入測試檔案的部分以及嘗試播放測試檔案的過程都加上許多詳細的log
+
+"folders": [
+{
+"path": "Ultimate Vocal Remover",
+      "tracks": [
+        {
+          "filename": "1_04.I Don't Even Know Your Name   Aftertaste   Kid In Love   I Want You Back (Live Medley)_",
+          "audioTracks": [
+            {
+              "filename": "1_04.I Don't Even Know Your Name   Aftertaste   Kid In Love   I Want You Back (Live Medley)_(Vocals).mp3",
+              "relPath": "Ultimate Vocal Remover/1_04.I Don't Even Know Your Name   Aftertaste   Kid In Love   I Want You Back (Live Medley)_(Vocals).mp3",
+              "blobUrl": "blob:http://127.0.0.1:5501/39376577-fb0b-4c7f-868e-862d9a7ca221",
+              "volume": 77,
+              "mute": false,
+              "suffix": "Vocals"
+            },
+            {
+              "filename": "1_04.I Don't Even Know Your Name   Aftertaste   Kid In Love   I Want You Back (Live Medley)_(Instrumental).mp3",
+              "relPath": "Ultimate Vocal Remover/1_04.I Don't Even Know Your Name   Aftertaste   Kid In Love   I Want You Back (Live Medley)_(Instrumental).mp3",
+              "blobUrl": "blob:http://127.0.0.1:5501/a4a44089-96d2-4124-9f70-24f67ba67e27",
+              "volume": 39,
+              "mute": false,
+              "suffix": "Instrumental"
+            }
+          ]
+        },
+        {
+          "filename": "1_001.迷星叫_",
+          "audioTracks": [
+            {
+              "filename": "1_001.迷星叫_(Bass).mp3",
+              "relPath": "Ultimate Vocal Remover/MyGo!!!!! to Ave Mujica (Crychic in the middle XD)/1_001.迷星叫_(Bass).mp3",
+              "blobUrl": "blob:http://127.0.0.1:5501/2aff0194-79e9-43ae-9a24-286b67b8ae59",
+              "volume": 58,
+              "mute": false,
+              "suffix": "Bass"
+            },
+            {
+              "filename": "1_001.迷星叫_(Drums).mp3",
+              "relPath": "Ultimate Vocal Remover/MyGo!!!!! to Ave Mujica (Crychic in the middle XD)/1_001.迷星叫_(Drums).mp3",
+              "blobUrl": "blob:http://127.0.0.1:5501/f99d9bcc-01ff-4ec8-b46c-b6766da88f2f",
+              "volume": 50,
+              "mute": false,
+              "suffix": "Drums"
+            },
+            {
+              "filename": "1_001.迷星叫_(Other).mp3",
+              "relPath": "Ultimate Vocal Remover/MyGo!!!!! to Ave Mujica (Crychic in the middle XD)/1_001.迷星叫_(Other).mp3",
+              "blobUrl": "blob:http://127.0.0.1:5501/3e4647d1-b3e3-4492-aff9-254dfbf21c8a",
+              "volume": 31,
+              "mute": false,
+              "suffix": "Other"
+            },
+            {
+              "filename": "1_001.迷星叫_(Vocals).mp3",
+              "relPath": "Ultimate Vocal Remover/MyGo!!!!! to Ave Mujica (Crychic in the middle XD)/1_001.迷星叫_(Vocals).mp3",
+              "blobUrl": "blob:http://127.0.0.1:5501/710c7da8-0e10-4065-a489-8e9fc78ab5e9",
+              "volume": 88,
+              "mute": false,
+              "suffix": "Vocals"
+            }
+          ]
+        },
+            {
+      "path": "Sample Music",
+      "tracks": [
+        {
+          "filename": "1_999.迷星叫_",
+          "audioTracks": [
+            {
+              "filename": "1_999.迷星叫_(Drums).mp3",
+              "relPath": "Sample Music/1_999.迷星叫_(Drums).mp3",
+              "blobUrl": "blob:http://127.0.0.1:5501/a16b15ab-39ae-4552-a721-14290eba5efd",
+              "volume": 85,
+              "mute": false,
+              "suffix": "Drums"
+            },
+            {
+              "filename": "1_999.迷星叫_(Bass).mp3",
+              "relPath": "Sample Music/1_999.迷星叫_(Bass).mp3",
+              "blobUrl": "blob:http://127.0.0.1:5501/7155bb0b-b956-45e9-b453-2109d5bca3d6",
+              "volume": 85,
+              "mute": false,
+              "suffix": "Bass"
+            },
+            {
+              "filename": "1_999.迷星叫_(Other).mp3",
+              "relPath": "Sample Music/1_999.迷星叫_(Other).mp3",
+              "blobUrl": "blob:http://127.0.0.1:5501/d9ab642d-db77-45f5-a2f8-33450dc779f2",
+              "volume": 85,
+              "mute": false,
+              "suffix": "Other"
+            },
+            {
+              "filename": "1_999.迷星叫_(Vocals).mp3",
+              "relPath": "Sample Music/1_999.迷星叫_(Vocals).mp3",
+              "blobUrl": "blob:http://127.0.0.1:5501/f94f8a81-087e-4fb2-b658-27780bad9391",
+              "volume": 85,
+              "mute": false,
+              "suffix": "Vocals"
+            }
+          ],
+          "lyricsFile": "blob:http://127.0.0.1:5501/db28ff42-169f-45f8-bf9a-c4eb9aa4db7b"
+        },
+...
+
+#### 2nd 
+出現很酷的bug!!! 上次載入測試音樂，重整網頁後這次手動選擇並載入的資料夾無法播放了
+(因為仍停留在上次的Active Folder: Sample Music) 請修復! 
+讓他可以自動切換選擇的資料夾或/範本資料到播放清單裡面，並維持載入後可以自動播放的功能，謝謝
+app.js:83 initializeApp start
+app.js:110 初始化：等待使用者重新選擇資料夾以更新 Blob URL
+app.js:112 initializeApp done
+g9nhm28jb13afdh.js:2 [Violation] Permissions policy violation: unload is not allowed in this document.
+(anonymous) @ g9nhm28jb13afdh.js:2
+(anonymous) @ g9nhm28jb13afdh.js:2
+(anonymous) @ g9nhm28jb13afdh.js:2
+favicon.ico:1  GET http://127.0.0.1:5501/favicon.ico 404 (Not Found)
+app.js:212 handleFolderSelect files: 194
+app.js:336 掃描完成，Active Folder: Sample Music
+app.js:371 播放清單已更新 [Sample Music]，共 0 首
