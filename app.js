@@ -10,8 +10,10 @@ let isRandom = false;
 let updateLoopReq = null;
 let latestFiles = [];
 
+// 用來管理同步檢查的 timer
 let syncIntervalId = null;
 let initialSyncTimeoutId = null;
+// 記錄上次自動同步調整的時間（避免連續重複調整）
 let lastSyncAdjustTimestamp = 0;
 
 function normalizePath(p) {
@@ -39,19 +41,21 @@ function readConfig() {
       { pattern: "\\(Vocals\\)$", name: "Vocals" }
     ],
     skipSeconds: 5,
-    lyricsFontSize: { line1: 20, line2: 16, line3: 14 } // 預設歌詞字體大小
+    lyricsFontSize: { line1: 20, line2: 16, line3: 14 }
   };
 }
 
 function saveConfig() {
   try {
+    // 為了避免 localStorage 儲存過多垃圾，不將 Blob URL 存入 (因重整後無效)
+    // 但我們會儲存字體大小等設定
     localStorage.setItem('config', JSON.stringify(config));
   } catch (e) {
     console.error("saveConfig 錯誤", e);
   }
 }
 
-// 【新增】：計算兩個字串的相似度 (Levenshtein Distance)
+// 計算兩個字串的相似度 (Levenshtein Distance)
 function calculateSimilarity(s1, s2) {
   const len1 = s1.length;
   const len2 = s2.length;
@@ -75,7 +79,7 @@ function calculateSimilarity(s1, s2) {
   return maxLength === 0 ? 1.0 : 1.0 - distance / maxLength;
 }
 
-// 【新增】：清洗檔名以進行比對
+// 清洗檔名以進行比對
 function cleanFilenameForMatching(name) {
   // 1. 移除第一個 _ 之前的內容 (包含 _)
   let processed = name;
@@ -87,6 +91,10 @@ function cleanFilenameForMatching(name) {
   const dotIndex = processed.indexOf('.');
   if (dotIndex !== -1) {
     processed = processed.substring(dotIndex + 1);
+  }
+  // 移除可能的末尾底線
+  if (processed.endsWith('_')) {
+    processed = processed.slice(0, -1);
   }
   return processed;
 }
@@ -100,7 +108,6 @@ async function initializeApp() {
   window.loadTrack = loadTrack;
   window.currentTrackIndex = currentTrackIndex;
 
-  // 【新增】暴露時間控制給 Lyrics.js
   window.AppAudioControl = {
     getCurrentTime: () => audioElements[0] ? audioElements[0].currentTime : 0,
     seekTo: (time) => {
@@ -122,7 +129,43 @@ window.onPlaylistUpdated = function () {
   console.log("[App] 收到播放清單更新通知，正在重新同步...");
   const newCfg = readConfig();
   if (!newCfg || !newCfg.folders) return;
-  config.folders = newCfg.folders;
+
+  // 這裡需要注意，readConfig 讀到的是 localStorage 裡的舊資料 (沒有 Blob URL)
+  // 我們必須保留目前記憶體中有 Blob URL 的 audioTracks 和 lyricsFile
+  // 但這裡簡化處理：因為 playlist.js 只是改順序，我們假設它保存時沒有破壞結構
+  // 實際上 playlist.js 存的是 filename，我們需要重新 map 回記憶體中的 blob
+
+  // 為了簡單起見，我們信任 tracks 陣列的 blobUrl 還在，只是順序變了
+  // 更好的做法是讓 playlist.js 只傳遞新的順序 index，不過目前的架構是重讀 config
+  // 所以這裡其實依賴 generateTrackListFromConfig 使用 *當前記憶體中的 config* (如果沒被覆蓋)
+  // 或者我們重新 scan? 不，重整後 blob 就不見了。
+
+  // 修正：我們使用 readConfig 取得順序，但保留當前 config 的 blob 資料
+  // 這部分比較複雜，目前的實作是 playlist.js 存檔後，這裡讀檔會導致 blob 遺失
+  // **但是**，只要使用者沒有按下 F5，瀏覽器記憶體內的 config 還是舊的嗎？
+  // 不，playlist.js 寫入 localStorage 後，這裡讀出來的是沒有 blob 的。
+  // **重要修正**：因為我們無法從 localStorage 恢復 Blob URL，
+  // 當 playlist 更新順序時，我們應該從 `window.tracks` (舊的) 裡把 Blob URL 找回來填回去。
+
+  const oldTracksMap = new Map();
+  tracks.forEach(t => oldTracksMap.set(t.baseName, t));
+
+  config.folders = newCfg.folders; // 更新為新順序
+
+  // 將 Blob URL 填回 config
+  config.folders.forEach(folder => {
+    folder.tracks.forEach(t => {
+      const oldT = oldTracksMap.get(t.filename);
+      if (oldT) {
+        t.lyricsFile = oldT.lyricsFile;
+        t.audioTracks.forEach(at => {
+          const oldAt = oldT.audioTracks.find(oa => oa.filename === at.filename);
+          if (oldAt) at.blobUrl = oldAt.blobUrl;
+        });
+      }
+    });
+  });
+
   const currentSongName = tracks[currentTrackIndex]?.baseName;
   generateTrackListFromConfig();
 
@@ -153,7 +196,6 @@ function setUpUIEvents() {
     else window.location.href = 'setting.html';
   });
 
-  // 【新增】歌詞按鈕事件
   const btnLyrics = document.getElementById('btn-lyrics');
   if (btnLyrics) btnLyrics.addEventListener('click', () => {
     if (window.LyricsUI) window.LyricsUI.openLyrics();
@@ -217,9 +259,9 @@ function handleFolderSelect(fileList) {
 function scanFiles(files) {
   const validAudioExt = ['mp3', 'wav', 'flac', 'm4a', 'aac', 'ogg'];
   const folderMaps = {};
-  const srtFiles = []; // 暫存所有的 SRT 檔案資訊
+  const srtFiles = [];
 
-  // 1. 分類檔案：音訊 與 字幕
+  // 1. 分類檔案
   files.forEach(file => {
     const relPath = (file.webkitRelativePath || file.name).replace(/\\/g, '/');
     const parts = relPath.split('/');
@@ -228,10 +270,9 @@ function scanFiles(files) {
     const ext = (name.split('.').pop() || '').toLowerCase();
 
     if (ext === 'srt') {
-      // 收集字幕檔
       srtFiles.push({
-        filename: name, // e.g., 迷星叫.srt
-        nameNoExt: name.substring(0, name.lastIndexOf('.')), // e.g., 迷星叫
+        filename: name,
+        nameNoExt: name.substring(0, name.lastIndexOf('.')),
         blobUrl: URL.createObjectURL(file),
         folderKey: normalizePath(folder || '')
       });
@@ -272,7 +313,7 @@ function scanFiles(files) {
     folderMaps[folderKey][mainName].push(entry);
   });
 
-  // 2. 更新 config.folders 並進行字幕配對
+  // 2. 更新 config.folders
   config.folders.forEach(folderCfg => {
     const key = normalizePath(folderCfg.path || '');
     const map = folderMaps[key] || {};
@@ -290,21 +331,17 @@ function scanFiles(files) {
         suffix: t.suffix
       }));
 
-      // 【字幕配對邏輯】
+      // 【字幕配對邏輯修正】
       let matchedSrt = null;
       let bestScore = 0;
 
-      // 1. 清洗歌曲名稱 (e.g. "1_001.迷星叫_" -> "迷星叫_")
       const cleanedSongName = cleanFilenameForMatching(mainName);
 
-      // 2. 遍歷該資料夾下(或同層級)的字幕
-      // 這裡簡化：比對所有讀取到的 srt (如果跨資料夾也能抓到的話，或者只比對該folderKey)
-      // 為了精確，我們過濾該 folderKey 的 srt (如果有的話)，或者全部比對
-      const candidates = srtFiles.filter(s => s.folderKey === key || s.folderKey === 'root'); // 簡單處理
-
-      candidates.forEach(srt => {
-        // 比對 cleanedSongName 與 srt.nameNoExt
+      // 放寬限制：比對所有掃描到的 SRT，不限制資料夾
+      // 這樣能解決如果字幕放在根目錄但音樂在子目錄的情況
+      srtFiles.forEach(srt => {
         const score = calculateSimilarity(cleanedSongName, srt.nameNoExt);
+        // 提高標準：70% 以上
         if (score > 0.7 && score > bestScore) {
           bestScore = score;
           matchedSrt = srt.blobUrl;
@@ -312,7 +349,7 @@ function scanFiles(files) {
       });
 
       if (matchedSrt) {
-        console.log(`字幕配對成功: 歌曲[${mainName}] <-> 字幕[${matchedSrt.slice(-10)}] (相似度: ${(bestScore * 100).toFixed(1)}%)`);
+        console.log(`字幕配對: [${mainName}] <-> [${matchedSrt.slice(-12)}] (${(bestScore * 100).toFixed(0)}%)`);
       }
 
       return { filename: mainName, audioTracks, lyricsFile: matchedSrt };
@@ -346,7 +383,7 @@ function generateTrackListFromConfig() {
       newTracks.push({
         baseName: t.filename,
         audioTracks: t.audioTracks.map(at => ({ ...at })),
-        lyricsFile: t.lyricsFile // 載入歌詞 BlobUrl
+        lyricsFile: t.lyricsFile
       });
     });
   }
@@ -384,7 +421,7 @@ function loadTrack(index) {
 
     const row = document.createElement('div');
     row.className = 'volume-track';
-    // ... (省略部分 UI 建置程式碼，與之前相同) ...
+
     const label = document.createElement('div');
     label.className = 'lbl';
     label.innerText = at.suffix ? `(${at.suffix})` : '(未知)';
@@ -446,7 +483,7 @@ function loadTrack(index) {
     });
   }
 
-  // 通知歌詞模組更新 (如果已開啟)
+  // 通知歌詞模組更新
   if (window.LyricsUI && window.LyricsUI.isLyricsOpen()) {
     window.LyricsUI.reloadLyrics();
   }
@@ -553,7 +590,7 @@ function syncCheckAndFix() {
   if (!audioElements.length) return;
   const now = Date.now();
   if (now - lastSyncAdjustTimestamp < 600) return;
-  // ... (省略同步邏輯，保持原樣) ...
+
   const timesMs = audioElements.map(a => Math.round((a.currentTime || 0) * 1000));
   const freq = {}; timesMs.forEach(t => freq[t] = (freq[t] || 0) + 1);
   let mostCommonTime = null; let mostCount = 0;

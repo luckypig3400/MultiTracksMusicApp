@@ -9,7 +9,7 @@
 
   function log(...args) { console.log('[Lyrics]', ...args); }
 
-  // 讀取與儲存 Config (依賴 app.js 的 window.AppAudioControl)
+  // 讀取與儲存 Config
   function getFontSizeConfig() {
     if (window.AppAudioControl) {
       const cfg = window.AppAudioControl.getConfig();
@@ -36,7 +36,11 @@
     else modal.classList.remove('vscode-dark');
 
     modal.style.display = 'flex';
-    reloadLyrics(); // 載入當前歌曲歌詞
+
+    // 【修復 Bug】：強制重新載入一次歌詞，確保抓到最新的 window.tracks 資料
+    // 這樣即使首次 scanFiles 後直接打開，也能正確顯示
+    reloadLyrics();
+
     startSyncLoop();
   }
 
@@ -57,7 +61,6 @@
     let match;
     while ((match = pattern.exec(srtContent)) !== null) {
       const startTime = parseTime(match[2]);
-      // const endTime = parseTime(match[3]); 
       const textBlock = match[4].trim();
       const lines = textBlock.split('\n').map(l => l.trim()).filter(l => l);
       result.push({ time: startTime, lines: lines });
@@ -96,7 +99,7 @@
       renderLyrics();
     } catch (e) {
       console.error('歌詞載入失敗', e);
-      container.innerHTML = '<div style="text-align:center; padding: 20px;">歌詞讀取錯誤</div>';
+      container.innerHTML = '<div style="text-align:center; padding: 20px;">歌詞讀取錯誤 (可能需重新選擇資料夾)</div>';
     }
   }
 
@@ -104,7 +107,6 @@
     const container = document.getElementById('lyrics-content');
     container.innerHTML = '';
 
-    // 讀取字體設定
     const sizes = getFontSizeConfig();
 
     // 注入動態樣式
@@ -115,23 +117,35 @@
       styleEl.id = styleId;
       document.head.appendChild(styleEl);
     }
+
+    // 【樣式修改】：
+    // 1. 預設全部為灰色 (color: #888 / #aaa)
+    // 2. 播放中 (.active) 時，全部文字變為金色 (#FFD700)
     styleEl.textContent = `
-        .lyric-line-1 { font-size: ${sizes.line1}px; font-weight: bold; color: #333; }
-        .lyric-line-2 { font-size: ${sizes.line2}px; color: #666; }
+        /* 一般狀態：全灰 */
+        .lyric-line-1 { font-size: ${sizes.line1}px; font-weight: bold; color: #888; }
+        .lyric-line-2 { font-size: ${sizes.line2}px; color: #888; }
         .lyric-line-3 { font-size: ${sizes.line3}px; color: #888; }
-        .vscode-dark .lyric-line-1 { color: #eee; }
-        .vscode-dark .lyric-line-2 { color: #bbb; }
-        .vscode-dark .lyric-line-3 { color: #999; }
+        
+        .vscode-dark .lyric-line-1 { color: #aaa; }
+        .vscode-dark .lyric-line-2 { color: #aaa; }
+        .vscode-dark .lyric-line-3 { color: #aaa; }
+
+        /* 播放中狀態：全金 */
+        .lyric-block.active .lyric-line-1,
+        .lyric-block.active .lyric-line-2,
+        .lyric-block.active .lyric-line-3 {
+            color: #FFD700 !important;
+            text-shadow: 0 0 8px rgba(255, 215, 0, 0.25);
+        }
     `;
 
-    // 建立歌詞 DOM
     lyricsData.forEach((item, index) => {
       const block = document.createElement('div');
       block.className = 'lyric-block';
       block.dataset.index = index;
       block.dataset.time = item.time;
 
-      // 點擊跳轉
       block.addEventListener('click', () => {
         if (window.AppAudioControl) {
           window.AppAudioControl.seekTo(item.time);
@@ -141,15 +155,12 @@
       item.lines.forEach((line, i) => {
         const p = document.createElement('p');
         p.textContent = line;
-        // 若只有一行，套用 line1；有三行則分別 line1, line2, line3
-        // 這裡簡單處理：第1行用 line1, 第2行用 line2...
-        // 如果只有一行英文，就是 line1
         let className = 'lyric-line-1';
         if (i === 1) className = 'lyric-line-2';
         if (i === 2) className = 'lyric-line-3';
 
         p.className = className;
-        p.style.margin = '2px 0';
+        p.style.margin = '4px 0'; // 增加行距
         block.appendChild(p);
       });
 
@@ -177,7 +188,6 @@
   }
 
   function updateActiveLyric(time) {
-    // 找到最後一個時間 <= currentTime 的歌詞
     let activeIndex = -1;
     for (let i = 0; i < lyricsData.length; i++) {
       if (lyricsData[i].time <= time) {
@@ -187,7 +197,6 @@
       }
     }
 
-    // 移除舊高亮
     const prevActive = document.querySelector('.lyric-block.active');
     if (prevActive && prevActive.dataset.index != activeIndex) {
       prevActive.classList.remove('active');
@@ -198,7 +207,6 @@
       const target = blocks[activeIndex];
       if (target && !target.classList.contains('active')) {
         target.classList.add('active');
-        // 自動滾動
         if (!isUserScrolling) {
           target.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }
@@ -214,7 +222,6 @@
       background: 'rgba(250,250,250,0.98)', display: 'none', flexDirection: 'column', zIndex: 10000
     });
 
-    // CSS
     const style = document.createElement('style');
     style.textContent = `
         #lyrics-header {
@@ -226,27 +233,29 @@
         .font-control input { width: 40px; }
         
         #lyrics-content {
-            height: 85%; overflow-y: auto; padding: 20px 0; box-sizing: border-box;
+            height: 85%; overflow-y: auto; padding: 40px 0; box-sizing: border-box;
             text-align: center; scroll-behavior: smooth;
         }
         .lyric-block {
-            padding: 10px 20px; cursor: pointer; transition: background 0.2s;
-            border-radius: 8px; margin: 0 10px;
+            padding: 12px 20px; cursor: pointer; transition: all 0.2s;
+            border-radius: 12px; margin: 4px 16px;
         }
         .lyric-block:hover { background: rgba(0,0,0,0.05); }
+        
+        /* 播放中樣式 */
         .lyric-block.active { 
-            background: rgba(0,0,0,0.1); transform: scale(1.02); transition: transform 0.2s; 
+            background: rgba(0, 0, 0, 0.88); 
+            transform: scale(1.02); 
         }
         
         /* Dark Mode */
         .vscode-dark #lyrics-modal { background-color: #1e1e1e; color: #d4d4d4; }
         .vscode-dark #lyrics-header { border-bottom: 1px solid #333; }
         .vscode-dark .lyric-block:hover { background: rgba(255,255,255,0.05); }
-        .vscode-dark .lyric-block.active { background: rgba(255,255,255,0.1); }
+        .vscode-dark .lyric-block.active { background: rgba(255, 215, 0, 0.08); }
     `;
     modal.appendChild(style);
 
-    // Header
     const header = document.createElement('div');
     header.id = 'lyrics-header';
 
@@ -269,7 +278,6 @@
     topRow.appendChild(title);
     topRow.appendChild(btnClose);
 
-    // Font Controls
     const controls = document.createElement('div');
     controls.id = 'lyrics-controls';
 
@@ -287,7 +295,7 @@
         const newSizes = getFontSizeConfig();
         newSizes[key] = parseInt(e.target.value);
         saveFontSizeConfig(newSizes);
-        renderLyrics(); // Re-render to apply styles
+        renderLyrics();
       };
       wrap.appendChild(input);
       return wrap;
@@ -300,17 +308,15 @@
     header.appendChild(topRow);
     header.appendChild(controls);
 
-    // Content
     const content = document.createElement('div');
     content.id = 'lyrics-content';
 
-    // 偵測使用者滾動，暫停自動滾動
     content.addEventListener('scroll', () => {
       isUserScrolling = true;
       if (scrollTimeout) clearTimeout(scrollTimeout);
       scrollTimeout = setTimeout(() => {
         isUserScrolling = false;
-      }, 2000); // 停止滾動 2 秒後恢復自動滾動
+      }, 2000);
     });
 
     modal.appendChild(header);
