@@ -38,15 +38,24 @@
   #time-current, #time-total { width:10%; text-align:center; font-size:0.9rem; }
   #progress { width:80%; height:6px; }
 
-  /* 25% 控制 */
+  /* 25% 控制 (修改為兩列佈局) */
   #controls {
     height:25%;
     display:flex;
+    flex-direction: column; /* 改為垂直排列 */
     align-items:center;
-    justify-content:space-around;
+    justify-content:center;
     gap:8px;
     box-sizing:border-box;
     border-bottom:1px solid #eaeaea;
+    padding: 8px;
+  }
+  .control-row {
+    display: flex;
+    width: 100%;
+    justify-content: space-around;
+    align-items: center;
+    gap: 8px;
   }
   #controls button {
     padding:10px 14px;
@@ -55,6 +64,7 @@
     border:1px solid #ccc;
     background:white;
     cursor:pointer;
+    min-width: 44px;
   }
 
   /* 40% 音軌控制 */
@@ -91,10 +101,8 @@
   #folder-chooser p { margin:0 0 8px 0; }
   #folder-chooser input[type=file] { width:100%; }
 
-  /* 小的閃爍樣式（透過 JS 切換背景顏色） */
+  /* 小的閃爍樣式 */
   .progress-flash { background-color: rgba(255,0,0,0.6) !important; transition: background-color 0.1s; }
-
-  /* small helper */
   .hidden { display:none !important; }
 </style>
 </head>
@@ -109,13 +117,20 @@
     </div>
 
     <div id="controls">
-      <button id="btn-playlist" title="播放清單"><i class="fa-solid fa-list-ul"></i></button>
-      <button id="btn-random" title="隨機"><i class="fa-solid fa-shuffle"></i></button>
-      <button id="btn-prev" title="上一首"><i class="fa-solid fa-backward-step"></i></button>
-      <button id="btn-play" title="播放"><i class="fa-solid fa-pause"></i></button>
-      <button id="btn-next" title="下一首"><i class="fa-solid fa-forward-step"></i></button>
-      <button id="btn-repeat" title="重複"><i class="fa-solid fa-repeat"></i></button>
-      <button id="btn-settings" title="設定"><i class="fa-solid fa-gear"></i></button>
+      <!-- 第一列：播放控制 -->
+      <div class="control-row">
+        <button id="btn-random" title="隨機"><i class="fa-solid fa-shuffle"></i></button>
+        <button id="btn-prev" title="上一首"><i class="fa-solid fa-backward-step"></i></button>
+        <button id="btn-play" title="播放"><i class="fa-solid fa-pause"></i></button>
+        <button id="btn-next" title="下一首"><i class="fa-solid fa-forward-step"></i></button>
+        <button id="btn-repeat" title="重複"><i class="fa-solid fa-repeat"></i></button>
+      </div>
+      <!-- 第二列：功能按鈕 -->
+      <div class="control-row">
+        <button id="btn-playlist" title="播放清單"><i class="fa-solid fa-list-ul"></i> 播放清單</button>
+        <button id="btn-lyrics" title="歌詞">歌詞(Lyrics)</button>
+        <button id="btn-settings" title="設定"><i class="fa-solid fa-gear"></i> 設定</button>
+      </div>
     </div>
 
     <div id="volume-controls">
@@ -123,7 +138,7 @@
     </div>
 
     <div id="folder-chooser" role="dialog" aria-modal="true">
-      <p>首次使用請選擇一或多個音樂資料夾（會掃描資料夾內音訊檔案）</p>
+      <p>首次使用請選擇一或多個音樂資料夾（會掃描資料夾內音訊檔案與歌詞）</p>
       <input type="file" id="folder-input" webkitdirectory directory multiple />
       <div style="margin-top:8px; text-align:right;">
         <button id="folder-ok">關閉</button>
@@ -133,11 +148,12 @@
 
   <script src="app.js"></script>
   <script src="playlist.js"></script>
+  <script src="lyrics.js"></script> <!-- 新增歌詞模組 -->
   <script src="setting.js"></script>
   <script>
     document.addEventListener('DOMContentLoaded', () => {
       if (window.ThemeManager) {
-        ThemeManager.loadAndApplyTheme(); // 自動套用已儲存的主題設定
+        ThemeManager.loadAndApplyTheme();
       }
     });
   </script>
