@@ -140,6 +140,7 @@ async function initializeApp() {
   console.log("initializeApp done");
 }
 
+// 【新增】設定 Media Session Action Handlers
 function setupMediaSession() {
   if ('mediaSession' in navigator) {
     navigator.mediaSession.setActionHandler('play', () => playPause());
