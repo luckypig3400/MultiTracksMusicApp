@@ -533,7 +533,7 @@ function loadTrack(index) {
     const audio = new Audio();
     audio.src = at.blobUrl || at.relPath;
     audio.preload = 'auto';
-    audio.volume = (at.mute ? 0 : ((typeof at.volume === 'number') ? (at.volume / 100) : 0.85));
+    audio.volume = (at.mute ? 1 : ((typeof at.volume === 'number') ? (at.volume / 100) : 0.85));
 
     // 綁定 key 用於查詢 offset
     audio.dataset.filename = at.filename;
@@ -553,13 +553,13 @@ function loadTrack(index) {
 
     const slider = document.createElement('input');
     slider.type = 'range'; slider.min = 0; slider.max = 100;
-    slider.value = at.mute ? 0 : (at.volume ?? 85);
+    slider.value = at.mute ? 1 : (at.volume ?? 85);
     slider.style.width = '85%';
     row.appendChild(slider);
 
     const num = document.createElement('input');
     num.type = 'number'; num.min = 0; num.max = 100;
-    num.value = at.mute ? 0 : (at.volume ?? 85);
+    num.value = at.mute ? 1 : (at.volume ?? 85);
     num.style.width = '10%';
     row.appendChild(num);
 
@@ -657,8 +657,8 @@ function toggleMuteForTrack(idx) {
 
   // UI 立即更新
   if (!at.mute) {
-    at.mute = true; ui.audio.volume = 0;
-    ui.slider.value = 0; ui.num.value = 0; ui.label.style.opacity = '0.6';
+    at.mute = true; ui.audio.volume = 1;
+    ui.slider.value = 1; ui.num.value = 1; ui.label.style.opacity = '0.6';
   } else {
     at.mute = false; const restored = at.volume ?? 85;
     ui.audio.volume = restored / 100;
