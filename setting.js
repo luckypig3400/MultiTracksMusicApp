@@ -30,31 +30,16 @@ window.ThemeManager = (() => {
   // 套用 VSCode dark 主題的樣式 (動態注入 CSS)
   const style = document.createElement('style');
   style.textContent = `
-    .vscode-dark div{
-      background-color: #1e1e1e !important;
-      color: #d4d4d4 !important;
-    }
-    .vscode-dark body, .vscode-dark .app, .vscode-dark #settings-modal {
-      background-color: #1e1e1e !important;
-      color: #d4d4d4 !important;
-    }
-    .vscode-dark textarea {
-      background-color: #252526 !important;
-      color: #d4d4d4 !important;
-      border-color: #3c3c3c !important;
-    }
-    .vscode-dark button {
-      background-color: #333 !important;
-      color: #ddd !important;
-      border-color: #555 !important;
-    }
+    .vscode-dark div{ background-color: #1e1e1e !important; color: #d4d4d4 !important; }
+    .vscode-dark body, .vscode-dark .app, .vscode-dark #settings-modal { background-color: #1e1e1e !important; color: #d4d4d4 !important; }
+    .vscode-dark textarea { background-color: #252526 !important; color: #d4d4d4 !important; border-color: #3c3c3c !important; }
+    .vscode-dark button { background-color: #333 !important; color: #ddd !important; border-color: #555 !important; }
   `;
   document.head.appendChild(style);
 
   function applyTheme(theme, btnTheme = null) {
     const app = document.querySelector('.app');
     const modal = document.getElementById('settings-modal');
-
     if (theme === 'dark') {
       document.documentElement.classList.add('vscode-dark');
       if (app) app.classList.add('vscode-dark');
@@ -98,7 +83,6 @@ window.ThemeManager = (() => {
     localStorage.setItem('appTheme', savedTheme);
     applyTheme(savedTheme, btnTheme);
   }
-
   return { applyTheme, toggleTheme, loadAndApplyTheme };
 })();
 
@@ -115,11 +99,37 @@ window.SettingsUI = (() => {
     const currentTheme = localStorage.getItem('appTheme') || 'light';
     const btnTheme = document.getElementById('btn-theme-toggle');
     ThemeManager.applyTheme(currentTheme, btnTheme);
+
+    // 更新 Debug 按鈕文字
+    updateDebugButtonState();
   }
 
   function closeSettings() {
     if (!modal) return;
     modal.style.display = 'none';
+  }
+
+  function updateDebugButtonState() {
+    const btn = document.getElementById('btn-debug-toggle');
+    if (!btn) return;
+    // 讀取目前 config
+    const cfg = JSON.parse(localStorage.getItem('config') || '{}');
+    if (cfg.showDebugInfo) {
+      btn.innerHTML = '除錯訊息: 開';
+      btn.style.color = '#2e7d32'; // green
+    } else {
+      btn.innerHTML = '除錯訊息: 關';
+      btn.style.color = '#555';
+    }
+  }
+
+  function toggleDebugInfo() {
+    const cfg = JSON.parse(localStorage.getItem('config') || '{}');
+    cfg.showDebugInfo = !cfg.showDebugInfo;
+    localStorage.setItem('config', JSON.stringify(cfg));
+    // 通知 App 更新 config 並立即顯示/隱藏
+    if (window.onPlaylistUpdated) window.onPlaylistUpdated();
+    updateDebugButtonState();
   }
 
   function buildModal() {
@@ -159,11 +169,11 @@ window.SettingsUI = (() => {
     const btnTheme = createButton('btn-theme-toggle', '<i class="fa-solid fa-moon"></i>', () => ThemeManager.toggleTheme(btnTheme));
     btnTheme.title = "切換主題";
 
-    // 範本相關按鈕
-    const btnLoadSample = createButton('btn-load-sample', '載入音樂範本', loadSampleMusic);
-    btnLoadSample.style.color = '#2e7d32'; // 綠色
-    btnLoadSample.style.borderColor = '#2e7d32';
+    // 【新增】除錯訊息開關
+    const btnDebug = createButton('btn-debug-toggle', '除錯訊息: 關', toggleDebugInfo);
 
+    const btnLoadSample = createButton('btn-load-sample', '載入音樂範本', loadSampleMusic);
+    btnLoadSample.style.color = '#2e7d32'; btnLoadSample.style.borderColor = '#2e7d32';
     const btnRemoveSample = createButton('btn-remove-sample', '刪除範本資料', removeSampleMusic);
     btnRemoveSample.style.color = '#e65100'; // 橘色
     btnRemoveSample.style.borderColor = '#e65100';
@@ -178,6 +188,7 @@ window.SettingsUI = (() => {
     btnContainer.appendChild(btnLoad);
     btnContainer.appendChild(btnClear);
     btnContainer.appendChild(btnTheme);
+    btnContainer.appendChild(btnDebug); // Add here
     btnContainer.appendChild(btnLoadSample);
     btnContainer.appendChild(btnRemoveSample);
     btnContainer.appendChild(btnForceReload);
@@ -211,10 +222,8 @@ window.SettingsUI = (() => {
 
   async function loadSampleMusic() {
     if (!confirm('確定要載入範本音樂檔案嗎？(需連網下載)\n\n注意：範本檔案將會被放入「Sample Music」資料夾中，不會覆蓋您現有的本地檔案。')) return;
-
     const loadedFiles = [];
     const fileObjects = [];
-
     try {
       const promises = SAMPLE_FILES.map(async (filename) => {
         const response = await fetch(SAMPLE_BASE_URL + filename);
@@ -226,9 +235,7 @@ window.SettingsUI = (() => {
         fileObjects.push(file);
         loadedFiles.push(filename);
       });
-
       await Promise.all(promises);
-
       if (fileObjects.length > 0 && window.AppAudioControl) {
         // 呼叫 app.js 提供的介面處理檔案
         window.AppAudioControl.loadFiles(fileObjects);
@@ -245,7 +252,6 @@ window.SettingsUI = (() => {
 
   function removeSampleMusic() {
     if (!confirm('確定要移除範本音樂資料嗎？\n(將會移除「Sample Music」資料夾)')) return;
-
     try {
       const config = JSON.parse(localStorage.getItem('config') || '{}');
       if (!config.folders) {
@@ -256,22 +262,14 @@ window.SettingsUI = (() => {
       // 直接移除 path 為 "Sample Music" 的資料夾
       const originalLength = config.folders.length;
       config.folders = config.folders.filter(f => f.path !== "Sample Music");
-
       if (config.folders.length < originalLength) {
         localStorage.setItem('config', JSON.stringify(config));
         loadConfigToTextarea();
         // 觸發 App 更新
         if (window.onPlaylistUpdated) window.onPlaylistUpdated();
-
         alert("已移除範本資料夾。");
-      } else {
-        alert("未找到範本資料夾 (Sample Music)。");
-      }
-
-    } catch (e) {
-      console.error(e);
-      alert("移除失敗。");
-    }
+      } else { alert("未找到範本資料夾 (Sample Music)。"); }
+    } catch (e) { console.error(e); alert("移除失敗。"); }
   }
 
   function loadConfigToTextarea() {
@@ -285,9 +283,7 @@ window.SettingsUI = (() => {
         cfg.appTheme = localStorage.getItem('appTheme') || 'light';
       }
       textarea.value = JSON.stringify(cfg, null, 2);
-    } catch (e) {
-      textarea.value = raw;
-    }
+    } catch (e) { textarea.value = raw; }
   }
 
   function exportConfig() {
@@ -301,9 +297,7 @@ window.SettingsUI = (() => {
       a.download = 'config_MultiTracksMusicApp.json';
       a.click();
       URL.revokeObjectURL(url);
-    } catch (e) {
-      alert('匯出設定時發生錯誤');
-    }
+    } catch (e) { alert('匯出設定時發生錯誤'); }
   }
 
   function handleFileLoad(e) {
@@ -315,7 +309,6 @@ window.SettingsUI = (() => {
         const obj = JSON.parse(evt.target.result);
         if (obj.appTheme) localStorage.setItem('appTheme', obj.appTheme);
         localStorage.setItem('config', JSON.stringify(obj));
-
         loadConfigToTextarea();
         ThemeManager.loadAndApplyTheme(document.getElementById('btn-theme-toggle'));
         alert('設定已載入並儲存到 localStorage');

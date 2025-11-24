@@ -38,6 +38,24 @@
   #time-current, #time-total { width:10%; text-align:center; font-size:0.9rem; }
   #progress { width:80%; height:6px; }
 
+  /* 除錯訊息區塊 (預設隱藏，由 JS 控制顯示) */
+  #debug-info {
+    display: none;
+    font-family: monospace;
+    font-size: 0.75rem;
+    color: #d32f2f;
+    background: rgba(0,0,0,0.05);
+    padding: 4px 8px;
+    white-space: nowrap;
+    overflow-x: auto;
+    border-bottom: 1px solid #eaeaea;
+  }
+  .vscode-dark #debug-info {
+    color: #ff6b6b;
+    background: rgba(255,255,255,0.05);
+    border-bottom: 1px solid #333;
+  }
+
   /* 25% 控制 (修改為兩列佈局) */
   #controls {
     height:25%;
@@ -116,6 +134,9 @@
       <input id="progress" type="range" min="0" max="100" value="0" />
       <div id="time-total">0:00</div>
     </div>
+    
+    <!-- 新增除錯訊息顯示區 -->
+    <div id="debug-info"></div>
 
     <div id="controls">
       <!-- 第一列：播放控制 -->

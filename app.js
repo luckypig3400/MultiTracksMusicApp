@@ -13,8 +13,15 @@ let latestFiles = [];
 // 用來管理同步檢查的 timer
 let syncIntervalId = null;
 let initialSyncTimeoutId = null;
-// 記錄上次自動同步調整的時間（避免連續重複調整）
 let lastSyncAdjustTimestamp = 0;
+// 防抖 Timer
+let saveVolumeTimeout = null;
+
+// 動態偏移補償 (針對手機延遲)
+// 結構: { filename: offsetMs } (offsetMs 單位為毫秒)
+let trackOffsets = {};
+// 標記是否正在等待校正後的驗證
+let isVerifyingSync = false;
 
 function normalizePath(p) {
   if (!p) return '';
@@ -41,7 +48,8 @@ function readConfig() {
       { pattern: "\\(Vocals\\)$", name: "Vocals" }
     ],
     skipSeconds: 5,
-    lyricsFontSize: { line1: 20, line2: 16, line3: 14 }
+    lyricsFontSize: { line1: 14, line2: 20, line3: 16 },
+    showDebugInfo: false
   };
 }
 
@@ -60,10 +68,8 @@ function calculateSimilarity(s1, s2) {
   const len1 = s1.length;
   const len2 = s2.length;
   const matrix = [];
-
   for (let i = 0; i <= len1; i++) matrix[i] = [i];
   for (let j = 0; j <= len2; j++) matrix[0][j] = j;
-
   for (let i = 1; i <= len1; i++) {
     for (let j = 1; j <= len2; j++) {
       const cost = s1.charAt(i - 1) === s2.charAt(j - 1) ? 0 : 1;
@@ -134,10 +140,17 @@ async function initializeApp() {
     }
   };
 
+  toggleDebugInfoDisplay();
   console.log("初始化：等待使用者重新選擇資料夾以更新 Blob URL");
   showFolderChooser(true);
-
   console.log("initializeApp done");
+}
+
+function toggleDebugInfoDisplay() {
+  const debugEl = document.getElementById('debug-info');
+  if (debugEl) {
+    debugEl.style.display = config.showDebugInfo ? 'block' : 'none';
+  }
 }
 
 // 【新增】設定 Media Session Action Handlers
@@ -161,7 +174,6 @@ function setupMediaSession() {
 // 【新增】更新 Media Session Metadata (歌名、演出者)
 function updateMediaSessionMetadata() {
   if (!('mediaSession' in navigator) || !tracks[currentTrackIndex]) return;
-
   const track = tracks[currentTrackIndex];
   // 嘗試從檔名解析更漂亮的標題 (可選)
   // 這裡直接使用 baseName
@@ -179,10 +191,8 @@ function updateMediaSessionMetadata() {
 // 【新增】更新 Media Session Position State (進度條)
 function updateMediaSessionPositionState() {
   if (!('mediaSession' in navigator) || !audioElements[0]) return;
-
   const audio = audioElements[0];
   if (isNaN(audio.duration) || isNaN(audio.currentTime)) return;
-
   try {
     navigator.mediaSession.setPositionState({
       duration: audio.duration,
@@ -205,8 +215,11 @@ window.onPlaylistUpdated = function () {
 
   // 保留 activeFolderPath
   const currentActive = config.activeFolderPath;
+  const debugSetting = config.showDebugInfo;
+
   config = newCfg;
   if (!config.activeFolderPath && currentActive) config.activeFolderPath = currentActive;
+  if (config.showDebugInfo === undefined) config.showDebugInfo = debugSetting;
 
   // 將 Blob URL 填回 config
   config.folders.forEach(folder => {
@@ -224,6 +237,7 @@ window.onPlaylistUpdated = function () {
 
   const currentSongName = tracks[currentTrackIndex]?.baseName;
   generateTrackListFromConfig();
+  toggleDebugInfoDisplay();
 
   if (currentSongName) {
     const newIdx = tracks.findIndex(t => t.baseName === currentSongName);
@@ -453,7 +467,6 @@ function scanFiles(files) {
 // 只載入 config.activeFolderPath 指定的資料夾
 function generateTrackListFromConfig() {
   const newTracks = [];
-
   if (!config.folders || config.folders.length === 0) {
     tracks = [];
     return;
@@ -509,6 +522,9 @@ function loadTrack(index) {
 
   audioElements.forEach(a => { try { a.pause(); } catch { } });
   audioElements = [];
+  // 重置 offset
+  trackOffsets = {};
+  isVerifyingSync = false;
 
   const vc = document.getElementById('volume-controls');
   vc.innerHTML = '';
@@ -518,6 +534,11 @@ function loadTrack(index) {
     audio.src = at.blobUrl || at.relPath;
     audio.preload = 'auto';
     audio.volume = (at.mute ? 0 : ((typeof at.volume === 'number') ? (at.volume / 100) : 0.85));
+
+    // 綁定 key 用於查詢 offset
+    audio.dataset.filename = at.filename;
+    audio.dataset.suffix = at.suffix || 'Unknown';
+
     audioElements.push(audio);
 
     const row = document.createElement('div');
@@ -576,7 +597,7 @@ function loadTrack(index) {
           if (!audioElements.length) return;
           if (audioElements[0].paused) return;
           syncCheckAndFix();
-        }, 3000);
+        }, 1000);
       }, 200);
     };
     first.addEventListener('canplaythrough', startPlay, { once: true });
@@ -601,34 +622,11 @@ function loadTrack(index) {
   }
 }
 
-function toggleMuteForTrack(idx) {
-  const track = tracks[currentTrackIndex];
-  if (!track) return;
-  const at = track.audioTracks[idx];
-  if (!at) return;
-  const ui = at._ui;
-  if (!ui) return;
-
-  if (!at.mute) {
-    at.mute = true; ui.audio.volume = 0;
-    ui.slider.value = 0; ui.num.value = 0; ui.label.style.opacity = '0.6';
-  } else {
-    at.mute = false; const restored = at.volume ?? 85;
-    ui.audio.volume = restored / 100;
-    ui.slider.value = restored; ui.num.value = restored; ui.label.style.opacity = '1';
-  }
-  saveConfig();
-}
-
-function onTrackEnd() {
-  if (repeatMode === 1) loadTrack(currentTrackIndex);
-  else if (repeatMode === 2) nextTrack();
-  else if (currentTrackIndex < tracks.length - 1) nextTrack();
-}
-
 function persistVolumeSetting(baseName, filename, volume) {
+  if (saveVolumeTimeout) clearTimeout(saveVolumeTimeout);
+
+  // 先更新記憶體
   try {
-    // 修正：需遍歷所有 folder 找對應的 track
     config.folders.forEach(folder => {
       if (folder.tracks) {
         const tr = folder.tracks.find(t => t.filename === baseName);
@@ -641,8 +639,71 @@ function persistVolumeSetting(baseName, filename, volume) {
         }
       }
     });
-    saveConfig();
   } catch (e) { console.error(e); }
+
+  // 防抖寫入
+  saveVolumeTimeout = setTimeout(() => {
+    saveConfig();
+  }, 500);
+}
+
+function toggleMuteForTrack(idx) {
+  const track = tracks[currentTrackIndex];
+  if (!track) return;
+  const at = track.audioTracks[idx];
+  if (!at) return;
+  const ui = at._ui;
+  if (!ui) return;
+
+  // UI 立即更新
+  if (!at.mute) {
+    at.mute = true; ui.audio.volume = 0;
+    ui.slider.value = 0; ui.num.value = 0; ui.label.style.opacity = '0.6';
+  } else {
+    at.mute = false; const restored = at.volume ?? 85;
+    ui.audio.volume = restored / 100;
+    ui.slider.value = restored; ui.num.value = restored; ui.label.style.opacity = '1';
+  }
+
+  // 【修正】如果是 Master (Vocals) 被切換，強制同步所有音軌
+  if (at.suffix === 'Vocals') {
+    console.log("Master (Vocals) mute toggled. Forcing full sync.");
+    // 找出 Vocals 元素 (其實就是 audioElements[idx])
+    const master = audioElements[idx];
+    const masterTime = master.currentTime;
+
+    audioElements.forEach(audio => {
+      if (audio === master) return;
+      const key = audio.dataset.filename;
+      const savedOffsetMs = trackOffsets[key] || 0;
+      audio.currentTime = masterTime + (savedOffsetMs / 1000);
+    });
+  }
+
+  // 同步更新記憶體中的 config
+  try {
+    config.folders.forEach(folder => {
+      if (folder.tracks) {
+        const tr = folder.tracks.find(t => t.filename === track.baseName);
+        if (tr) {
+          const confAt = tr.audioTracks.find(a => a.filename === at.filename);
+          if (confAt) confAt.mute = at.mute;
+        }
+      }
+    });
+  } catch (e) { console.error(e); }
+
+  // 防抖存檔
+  if (saveVolumeTimeout) clearTimeout(saveVolumeTimeout);
+  saveVolumeTimeout = setTimeout(() => {
+    saveConfig();
+  }, 500);
+}
+
+function onTrackEnd() {
+  if (repeatMode === 1) loadTrack(currentTrackIndex);
+  else if (repeatMode === 2) nextTrack();
+  else if (currentTrackIndex < tracks.length - 1) nextTrack();
 }
 
 function playPause() {
@@ -655,7 +716,6 @@ function playPause() {
     // 【新增】更新通知列狀態
     navigator.mediaSession.playbackState = 'playing';
     updateMediaSessionPositionState();
-
     if (initialSyncTimeoutId) clearTimeout(initialSyncTimeoutId);
     initialSyncTimeoutId = setTimeout(() => { syncCheckAndFix(); syncIntervalId = setInterval(() => { if (!audioElements[0].paused) syncCheckAndFix(); }, 5000); }, 200);
   } else {
@@ -664,7 +724,6 @@ function playPause() {
 
     // 【新增】更新通知列狀態
     navigator.mediaSession.playbackState = 'paused';
-
     if (syncIntervalId) clearInterval(syncIntervalId);
   }
 }
@@ -715,9 +774,51 @@ function startProgressLoop() {
     document.getElementById('time-current').innerText = formatTime(cur);
     document.getElementById('time-total').innerText = formatTime(dur);
     document.getElementById('progress').value = dur > 0 ? (cur / dur) * 100 : 0;
+
+    if (config.showDebugInfo) {
+      updateDebugInfoDisplay(audioElements);
+    }
+
     updateLoopReq = requestAnimationFrame(loop);
   };
   loop();
+}
+
+function updateDebugInfoDisplay(elements) {
+  const debugEl = document.getElementById('debug-info');
+  if (!debugEl) return;
+
+  // 找出 Master (Vocals or Index 0)
+  let masterIdx = elements.findIndex(a => a.dataset.suffix === 'Vocals');
+  if (masterIdx === -1) masterIdx = 0;
+
+  const master = elements[masterIdx];
+  const masterTime = master.currentTime;
+
+  const m = Math.floor(masterTime / 60);
+  const s = Math.floor(masterTime % 60);
+  const ms = Math.floor((masterTime % 1) * 1000);
+  const timeStr = `${m}:${s < 10 ? '0' + s : s}.${ms.toString().padStart(3, '0')}`;
+
+  let html = `<b>Vocals:</b> <span style="color:#333; background:#eee; padding:0 2px;">${timeStr}</span>`;
+  if (document.body.classList.contains('vscode-dark')) {
+    html = `<b>Vocals:</b> <span style="color:#eee; background:#333; padding:0 2px;">${timeStr}</span>`;
+  }
+
+  elements.forEach((a, i) => {
+    if (i === masterIdx) return;
+    const diff = (a.currentTime - masterTime) * 1000; // ms
+    const sign = diff > 0 ? '+' : '';
+    const diffStr = `${sign}${Math.round(diff)}ms`;
+    let color = 'inherit';
+    // 【調整】閥值改為 10ms 和 5ms
+    if (Math.abs(diff) > 10) color = 'red';
+    else if (Math.abs(diff) > 5) color = 'orange';
+
+    html += ` , <b>${a.dataset.suffix}:</b> <span style="color:${color}">${diffStr}</span>`;
+  });
+
+  debugEl.innerHTML = html;
 }
 
 function formatTime(sec) {
@@ -727,27 +828,114 @@ function formatTime(sec) {
   return `${m}:${s < 10 ? '0' + s : s}`;
 }
 
+// 【修正】主從式同步 + 動態偏移補償 + 閥值 10ms
 function syncCheckAndFix() {
   if (!audioElements.length) return;
-  const now = Date.now();
-  if (now - lastSyncAdjustTimestamp < 600) return;
+  if (isVerifyingSync) return;
 
-  const timesMs = audioElements.map(a => Math.round((a.currentTime || 0) * 1000));
-  const freq = {}; timesMs.forEach(t => freq[t] = (freq[t] || 0) + 1);
-  let mostCommonTime = null; let mostCount = 0;
-  for (const k in freq) { if (freq[k] > mostCount) { mostCount = freq[k]; mostCommonTime = parseInt(k); } }
-  let refTime = mostCommonTime;
-  const uniqueTimes = Object.keys(freq).length;
-  if (uniqueTimes > 1) {
-    const vocalsIndex = tracks[currentTrackIndex]?.audioTracks?.findIndex(at => at.suffix === 'Vocals');
-    if (vocalsIndex != null && vocalsIndex >= 0) refTime = Math.round((audioElements[vocalsIndex].currentTime || 0) * 1000);
+  const now = Date.now();
+  if (now - lastSyncAdjustTimestamp < 1000) return;
+
+  // 1. 確定 Master
+  let masterIdx = audioElements.findIndex(a => a.dataset.suffix === 'Vocals');
+  if (masterIdx === -1) masterIdx = 0;
+  const master = audioElements[masterIdx];
+  const masterTime = master.currentTime;
+
+  let needsFix = false;
+  const threshold = 0.01; // 【修正】10ms
+
+  // 2. 檢查是否有音軌偏移 (只查 Slave)
+  for (let i = 0; i < audioElements.length; i++) {
+    if (i === masterIdx) continue;
+    const diff = audioElements[i].currentTime - masterTime;
+    if (Math.abs(diff) > threshold) {
+      needsFix = true;
+      break;
+    }
   }
-  const diffs = timesMs.map(t => t - refTime);
-  if (diffs.some(d => Math.abs(d) > 15)) {
-    audioElements.forEach(a => a.currentTime = refTime / 1000);
+
+  if (needsFix) {
+    console.log("[Sync Triggered] " + getDebugInfoString(audioElements, false));
+
+    // 3. 只調整跑掉的 Slave
+    audioElements.forEach((slave, i) => {
+      if (i === masterIdx) return;
+
+      const diff = slave.currentTime - masterTime;
+      if (Math.abs(diff) > threshold) {
+        const key = slave.dataset.filename;
+        const savedOffsetMs = trackOffsets[key] || 0;
+
+        const targetTime = masterTime + (savedOffsetMs / 1000);
+        slave.currentTime = targetTime;
+      }
+    });
+
     lastSyncAdjustTimestamp = Date.now();
     flashProgressBar();
+
+    // 4. 0.5秒後驗證並學習
+    isVerifyingSync = true;
+    setTimeout(() => {
+      verifySyncAndLearn(master);
+      isVerifyingSync = false;
+    }, 500);
   }
+}
+
+// 產生除錯字串 (共用)
+function getDebugInfoString(elements, isHtml) {
+  // 時間戳記
+  const now = new Date();
+  const ts = `[${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}]`;
+  let masterIdx = elements.findIndex(a => a.dataset.suffix === 'Vocals');
+  if (masterIdx === -1) masterIdx = 0;
+  const master = elements[masterIdx];
+  const masterTime = master.currentTime;
+
+  const m = Math.floor(masterTime / 60);
+  const s = Math.floor(masterTime % 60);
+  const ms = Math.floor((masterTime % 1) * 1000);
+  const timeStr = `${m}:${s < 10 ? '0' + s : s}.${ms.toString().padStart(3, '0')}`;
+
+  let output = `[${ts}]`;
+  if (!isHtml) output = `Vocals: ${timeStr}`;
+
+  elements.forEach((a, i) => {
+    if (i === masterIdx) return;
+    const diff = (a.currentTime - masterTime) * 1000;
+    const sign = diff > 0 ? '+' : '';
+    const diffStr = `${sign}${Math.round(diff)}ms`;
+    if (!isHtml) output += ` , ${a.dataset.suffix}: ${diffStr}`;
+  });
+  return output;
+}
+
+function verifySyncAndLearn(master) {
+  const masterTime = master.currentTime;
+
+  audioElements.forEach((audio, i) => {
+    if (audio === master) return;
+
+    const diffMs = (audio.currentTime - masterTime) * 1000;
+    const key = audio.dataset.filename;
+
+    // 【修正】閥值改為 10ms
+    if (Math.abs(diffMs) > 10) {
+      if (!trackOffsets[key]) trackOffsets[key] = 0;
+
+      // Offset += (-diff)
+      trackOffsets[key] += (-diffMs);
+
+      console.log(`[Sync Learn] ${audio.dataset.suffix} offset adjusted. Diff: ${Math.round(diffMs)}ms, New Offset: ${Math.round(trackOffsets[key])}ms`);
+    } else {
+      if (trackOffsets[key]) {
+        trackOffsets[key] *= 0.8;
+        if (Math.abs(trackOffsets[key]) < 5) trackOffsets[key] = 0;
+      }
+    }
+  });
 }
 
 function flashProgressBar() {
