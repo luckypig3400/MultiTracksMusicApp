@@ -41,11 +41,22 @@
 
     if (!activePath || !cfg.folders) return;
 
+    // 這裡的邏輯需要調整：因為 activePath 可能是一個子目錄
+    // 我們需要找到這個子目錄對應的 Root Config Folder
+    // 注意：這裡只處理排序存檔，對於子目錄的排序，目前邏輯可能只會影響 "Root Folder" 內的 track 順序
+    // 如果是子目錄，這會變得複雜。
+    // 暫時策略：找到 Root Folder，把所有 tracks 取出來，
+    // 然後依照 currentTracks 的順序重新排列 Root Folder 內的 tracks (僅針對有顯示的部分)
+    // 但因為 currentTracks 只是 activePath 內的子集，直接覆蓋會導致其他資料夾的 tracks 遺失或順序亂掉
+    // 因此：僅當 activePath 等於 Root Path 時才執行完整覆蓋排序。
+    // 若為子目錄，暫時不支援排序持久化回 config (或需更複雜邏輯)，以避免資料遺失。
+
+    // 簡單正規化比對
+    const normActive = activePath.replace(/\\/g, '/').replace(/\/+$/, '');
+
     const folder = cfg.folders.find(f => {
-      // 簡單正規化比對
-      const p1 = f.path.replace(/\\/g, '/').replace(/\/+$/, '');
-      const p2 = activePath.replace(/\\/g, '/').replace(/\/+$/, '');
-      return p1 === p2;
+      const p = f.path.replace(/\\/g, '/').replace(/\/+$/, '');
+      return normActive === p; // 嚴格比對，只支援 Root Folder 排序存檔
     });
 
     if (folder) {
@@ -57,7 +68,9 @@
       folder.tracks = currentTracks.map(ct => trackMap.get(ct.baseName)).filter(t => t);
 
       saveConfig(cfg);
-      log('persistTracks: saved order for', folder.path);
+      log('persistTracks: saved order for root folder', folder.path);
+    } else {
+      log('persistTracks: skipping sort save for sub-folder or not found');
     }
   }
 
@@ -130,6 +143,23 @@
       .playlist-item.dragging { opacity: 0.5; background-color: #ddd; }
       .vscode-dark .playlist-item.dragging { background-color: #444; }
       .drag-handle { width: 15%; text-align: center; cursor: grab; font-size: 1.2rem; color: #888; padding: 4px; user-select: none; }
+
+      /* Folder Tree Styles */
+      .folder-tree-node { margin-left: 12px; border-left: 1px solid #eee; }
+      .vscode-dark .folder-tree-node { border-left: 1px solid #444; }
+      .folder-row { padding: 8px; cursor: pointer; display: flex; align-items: center; gap: 6px; }
+      .folder-row:hover { background: rgba(0,0,0,0.05); }
+      .vscode-dark .folder-row:hover { background: rgba(255,255,255,0.05); }
+      .folder-row.active { background: #e3f2fd; color: #1976d2; font-weight: bold; }
+      .vscode-dark .folder-row.active { background: #37373d; color: #fff; }
+      .folder-arrow { width: 20px; text-align: center; color: #888; transition: transform 0.2s; }
+      .folder-arrow.expanded { transform: rotate(90deg); }
+      .folder-name-text { flex: 1; }
+      .folder-all-btn { 
+          font-size: 0.8rem; padding: 2px 8px; border-radius: 4px; border: 1px solid #ccc; 
+          margin-left: auto; cursor: pointer; 
+      }
+      .vscode-dark .folder-all-btn { border-color: #555; background: #333; }
     `;
     modal.appendChild(style);
 
@@ -189,6 +219,162 @@
     document.body.appendChild(modal);
   }
 
+  // -------------------------------------------------------------
+  // 新的 Folder Tree 邏輯
+  // -------------------------------------------------------------
+
+  function buildFileTree(folder) {
+    const rootPath = folder.path.replace(/\\/g, '/').replace(/\/+$/, '');
+    const tree = { name: rootPath, path: rootPath, children: {}, files: [], isRoot: true };
+
+    if (!folder.tracks) return tree;
+
+    folder.tracks.forEach(track => {
+      // 取得該 Track 的完整相對路徑
+      let relPath = "";
+      if (track.audioTracks && track.audioTracks.length > 0) {
+        relPath = track.audioTracks[0].relPath.replace(/\\/g, '/');
+      } else {
+        // Fallback (理論上不應該發生)
+        relPath = rootPath + "/" + track.filename;
+      }
+
+      // 計算相對於 Root 的路徑
+      // 例如 Root: "UVR", relPath: "UVR/Sub/A.mp3" -> subPath: "Sub/A.mp3"
+      let subPath = relPath;
+      if (relPath.startsWith(rootPath + '/')) {
+        subPath = relPath.substring(rootPath.length + 1);
+      } else if (relPath === rootPath) { // 檔案直接在 root 裡
+        subPath = "";
+      }
+
+      // 分割目錄
+      const parts = subPath.split('/');
+      // 檔名是最後一個
+      const fileName = parts.pop();
+
+      // 逐步建構樹
+      let currentNode = tree;
+      let currentPath = rootPath;
+
+      parts.forEach(part => {
+        if (!part) return;
+        currentPath += '/' + part;
+        if (!currentNode.children[part]) {
+          currentNode.children[part] = {
+            name: part,
+            path: currentPath,
+            children: {},
+            files: []
+          };
+        }
+        currentNode = currentNode.children[part];
+      });
+
+      // 雖然我們只顯示資料夾，但可以記錄檔案數以供參考
+      currentNode.files.push(fileName);
+    });
+
+    return tree;
+  }
+
+  function renderFolderNode(node, container, currentActivePath, onSelect, depth = 0) {
+    // Container for this node
+    const nodeDiv = document.createElement('div');
+    // Root 不需要 margin，子節點有
+    if (depth > 0) nodeDiv.className = 'folder-tree-node';
+
+    // 1. 節點本身的 Row (顯示名稱 + 箭頭 + All按鈕)
+    const row = document.createElement('div');
+    row.className = 'folder-row';
+
+    // 檢查是否有子資料夾
+    const childKeys = Object.keys(node.children).sort();
+    const hasSubFolders = childKeys.length > 0;
+
+    // 箭頭 (如果沒有子資料夾，顯示空白或圓點)
+    const arrow = document.createElement('div');
+    arrow.className = 'folder-arrow';
+    if (hasSubFolders) {
+      arrow.innerHTML = '<i class="fa-solid fa-caret-right"></i>';
+    } else {
+      arrow.innerHTML = '<i class="fa-solid fa-music" style="font-size:0.8em; opacity:0.5;"></i>';
+    }
+    row.appendChild(arrow);
+
+    // 資料夾名稱
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'folder-name-text';
+    nameSpan.innerText = node.name + (node.isRoot ? '' : '');
+    row.appendChild(nameSpan);
+
+    // 判斷此節點是否被選中 (完全匹配)
+    const isActive = (node.path === currentActivePath);
+    if (isActive) row.classList.add('active');
+
+    // "All" 功能邏輯：
+    // 如果點擊整個 Row
+    row.onclick = (e) => {
+      e.stopPropagation();
+      // 如果有子資料夾，點擊 Row 預設行為是展開/收合
+      if (hasSubFolders) {
+        const isExpanded = arrow.classList.contains('expanded');
+        if (isExpanded) {
+          arrow.classList.remove('expanded');
+          childrenContainer.style.display = 'none';
+        } else {
+          arrow.classList.add('expanded');
+          childrenContainer.style.display = 'block';
+        }
+      } else {
+        // 如果是葉節點(沒子資料夾)，點擊就是選取 "All" (該目錄下所有檔案)
+        onSelect(node.path);
+      }
+    };
+
+    nodeDiv.appendChild(row);
+
+    // 2. 子項目容器 (預設展開 Root，其他收合?)
+    const childrenContainer = document.createElement('div');
+    childrenContainer.style.display = 'none'; // 預設收合
+
+    // 如果 CurrentActivePath 位於此節點之下，則預設展開
+    // 或是 Root 預設展開
+    if (node.isRoot || (currentActivePath && currentActivePath.startsWith(node.path + '/'))) {
+      childrenContainer.style.display = 'block';
+      if (hasSubFolders) arrow.classList.add('expanded');
+    }
+
+    nodeDiv.appendChild(childrenContainer);
+
+    // 3. 插入特殊的 "All" 選項 (如果該節點有子資料夾)
+    // 這樣使用者可以選擇「只播放這個資料夾(包含遞迴)」，即使它已經展開
+    if (hasSubFolders) {
+      const allRow = document.createElement('div');
+      allRow.className = 'folder-row';
+      allRow.style.paddingLeft = '36px'; // 縮排比一般子項目多一點
+      allRow.innerHTML = '<i class="fa-solid fa-list-check" style="color:#666;"></i> <span style="margin-left:6px">All (包含子資料夾)</span>';
+
+      if (isActive) {
+        allRow.classList.add('active');
+        allRow.style.color = 'inherit'; // override active color
+      }
+
+      allRow.onclick = (e) => {
+        e.stopPropagation();
+        onSelect(node.path);
+      };
+      childrenContainer.appendChild(allRow);
+    }
+
+    // 4. 遞迴渲染子資料夾
+    childKeys.forEach(key => {
+      renderFolderNode(node.children[key], childrenContainer, currentActivePath, onSelect, depth + 1);
+    });
+
+    container.appendChild(nodeDiv);
+  }
+
   function showFolderSelectionModal() {
     const cfg = getConfig();
     if (!cfg.folders || cfg.folders.length === 0) {
@@ -206,7 +392,7 @@
 
     const panel = document.createElement('div');
     Object.assign(panel.style, {
-      width: '80%', height: '80%', background: 'white', borderRadius: '8px',
+      width: '90%', maxWidth: '500px', height: '80%', background: 'white', borderRadius: '8px',
       padding: '16px', display: 'flex', flexDirection: 'column', gap: '8px',
       boxShadow: '0 4px 12px rgba(0,0,0,0.2)'
     });
@@ -224,40 +410,43 @@
 
     const listContainer = document.createElement('div');
     Object.assign(listContainer.style, {
-      flex: 1, overflowY: 'auto', border: '1px solid #ccc', borderRadius: '4px'
+      flex: 1, overflowY: 'auto', border: '1px solid #ccc', borderRadius: '4px',
+      padding: '8px'
     });
+    if (document.body.classList.contains('vscode-dark')) listContainer.style.borderColor = '#444';
 
+    // 處理當前 Active Path
+    const currentActive = (cfg.activeFolderPath || '').replace(/\\/g, '/').replace(/\/+$/, '');
+
+    // 迭代每一個 Config Root Folder
     cfg.folders.forEach(folder => {
-      const item = document.createElement('div');
-      item.innerText = folder.path || '(未命名資料夾)';
-      Object.assign(item.style, {
-        padding: '12px', cursor: 'pointer', borderBottom: '1px solid #eee'
-      });
-
-      if (modal.classList.contains('vscode-dark')) item.style.borderBottom = '1px solid #444';
-
-      // 高亮當前資料夾
-      if (folder.path === cfg.activeFolderPath) {
-        item.style.background = modal.classList.contains('vscode-dark') ? '#37373d' : '#e3f2fd';
-        item.style.fontWeight = 'bold';
-      }
-
-      item.onclick = () => {
+      // 建構樹
+      const tree = buildFileTree(folder);
+      // 渲染樹
+      renderFolderNode(tree, listContainer, currentActive, (selectedPath) => {
         if (window.AppAudioControl) {
-          window.AppAudioControl.switchFolder(folder.path);
+          window.AppAudioControl.switchFolder(selectedPath);
           // 更新 Playlist UI
-          loadTracksFromStorage(); // 重新從 window.tracks 載入
+          loadTracksFromStorage();
           renderList();
           updateHeaderTitle();
         }
         document.body.removeChild(overlay);
-      };
-      listContainer.appendChild(item);
+      });
+
+      // 分隔線
+      const separator = document.createElement('div');
+      separator.style.height = '1px';
+      separator.style.background = '#eee';
+      separator.style.margin = '8px 0';
+      if (document.body.classList.contains('vscode-dark')) separator.style.background = '#444';
+      listContainer.appendChild(separator);
     });
 
     const closeBtn = document.createElement('button');
     closeBtn.innerText = '取消';
     closeBtn.style.padding = '8px';
+    closeBtn.style.cursor = 'pointer';
     closeBtn.onclick = () => document.body.removeChild(overlay);
 
     panel.appendChild(title);

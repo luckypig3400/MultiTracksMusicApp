@@ -134,7 +134,7 @@ async function initializeApp() {
     },
     // 新增：切換資料夾並重整清單
     switchFolder: (path) => {
-      config.activeFolderPath = path;
+      config.activeFolderPath = normalizePath(path);
       saveConfig();
       generateTrackListFromConfig();
     }
@@ -464,7 +464,9 @@ function scanFiles(files) {
   generateTrackListFromConfig();
 }
 
-// 只載入 config.activeFolderPath 指定的資料夾
+// 【Modified】支援子資料夾過濾
+// 只載入 config.activeFolderPath 指定的資料夾或子資料夾
+// activeFolderPath 可以是根目錄 (如 "Ultimate Vocal Remover") 也可以是子目錄 (如 "Ultimate Vocal Remover/Others")
 function generateTrackListFromConfig() {
   const newTracks = [];
   if (!config.folders || config.folders.length === 0) {
@@ -472,22 +474,57 @@ function generateTrackListFromConfig() {
     return;
   }
 
-  // 1. 確定要顯示哪個資料夾
-  let targetFolder = config.folders.find(f => normalizePath(f.path) === normalizePath(config.activeFolderPath));
+  const normActivePath = normalizePath(config.activeFolderPath);
 
-  // 如果找不到目標資料夾(可能被刪除了)，預設切回第一個
+  // 1. 尋找對應的 Config Folder (父資料夾)
+  // 因為 config.folders 只存 root level，所以我們要找 activeFolderPath 是否以某個 config folder 開頭
+  let targetFolder = config.folders.find(f => {
+    const p = normalizePath(f.path);
+    return normActivePath === p || normActivePath.startsWith(p + '/');
+  });
+
+  // 如果找不到 (可能被刪除或異常)，且有資料夾，預設回第一個根目錄
   if (!targetFolder && config.folders.length > 0) {
     targetFolder = config.folders[0];
-    config.activeFolderPath = targetFolder.path;
+    config.activeFolderPath = normalizePath(targetFolder.path); // 重置為根路徑
+    console.warn(`Target folder not found for path [${normActivePath}], defaulting to [${config.activeFolderPath}]`);
   }
 
   if (targetFolder && targetFolder.tracks) {
     targetFolder.tracks.forEach(t => {
-      newTracks.push({
-        baseName: t.filename,
-        audioTracks: t.audioTracks.map(at => ({ ...at })),
-        lyricsFile: t.lyricsFile
-      });
+      // 2. 過濾 tracks
+      // 取出 track 的完整相對路徑，判斷是否位於 activeFolderPath 內
+      // 假設 t.audioTracks[0].relPath 存在 (通常都有)
+      if (t.audioTracks && t.audioTracks.length > 0) {
+        const fullRelPath = normalizePath(t.audioTracks[0].relPath);
+
+        // 取得檔案所在的目錄路徑
+        // 例如 fullRelPath: "Root/Sub/Song.mp3" -> dirPath: "Root/Sub"
+        const lastSlash = fullRelPath.lastIndexOf('/');
+        const dirPath = lastSlash !== -1 ? fullRelPath.substring(0, lastSlash) : "";
+
+        // 判斷邏輯：
+        // 如果 activeFolderPath 是 "Root"，則 "Root/Song.mp3" 和 "Root/Sub/Song.mp3" 都應該包含 (遞迴)
+        // 如果 activeFolderPath 是 "Root/Sub"，則只有 "Root/Sub/..." 的檔案被包含
+        // 這裡我們採用 "Starts With" 邏輯來達成遞迴包含的效果
+
+        // 修正：要比對的是 dirPath 是否以 activeFolderPath 開頭
+        // 例如 active: "Root", dir: "Root/Sub" -> Match
+        // 例如 active: "Root/Sub", dir: "Root/Other" -> No Match
+        // 另外需考慮邊界，避免 "Root/Sub2" match "Root/Sub"
+        // 因此標準化路徑後，比對是否相等，或是以 (activePath + '/') 開頭
+
+        const isMatch = (dirPath === config.activeFolderPath) ||
+          dirPath.startsWith(config.activeFolderPath + '/');
+
+        if (isMatch) {
+          newTracks.push({
+            baseName: t.filename,
+            audioTracks: t.audioTracks.map(at => ({ ...at })),
+            lyricsFile: t.lyricsFile
+          });
+        }
+      }
     });
   }
 

@@ -417,3 +417,79 @@ app.js:371 播放清單已更新 [Sample Music]，共 0 首
 剛剛測試是可行的，所以請把Vocals mute也採用相同邏輯靜音不要變成0，而是把音量變成1(模擬拖曳拉桿變成1)
 我發現你剛才還是都把我的註解刪掉，請勿刪除任何一行註解，也不要壓縮程式碼
 用我這次傳的app.js去修改
+
+### 請Gemini 3 Pro預覽版協助在播放清單Folder切換鈕可以切進相對路徑內的資料夾
+#### 1st
+`附上本專案所有程式碼文件，排除vscode和git設定以及 需求.txt`
+`雖然Gemini 3 Pro總共可以接受超過100萬tokens的輸出入加總，但會累加目前已使用超過40萬，感覺AI稍微變笨所以新開聊天，這一次使用Build模式`
+你好請你仔細瀏覽我傳所有的程式碼，我希望你幫我在播放清單的資料夾切換按鈕更改為可以切換進去只播放相對路徑內的資料夾(子資料夾子之子資料夾)
+我下面有貼目前config內的一小段json，"path": "Sample Music"、"path": "Ultimate Vocal Remover"、"relPath": "Ultimate Vocal Remover/Others/*"、"relPath": "Ultimate Vocal Remover/MyGo!!!!! to Ave Mujica (Crychic in the middle XD)/*、或是其他"relPath": "Ultimate Vocal Remover/*的資料夾/，以及"relPath": "Ultimate Vocal Remover/*，直接是父資料夾內的檔案
+我的想法是了把path視為父資料夾，而記錄在裡面的relPath視為子資料夾，但是也提供，可以一次播放付資料夾內的所有檔案(目前就是這樣)
+所以目前的資料夾切換按鈕， 的上層改為是可以展開來的摺疊區塊，然後展開來後以下面config的案例應該會變成這樣
+目前版本:點進去就直接切換到那個資料夾內的所有檔案作為播放清單內容
+選擇資料夾
+Ultimate Vocal Remover
+Sample Music
+希望本次修改成:點一下父資料夾展開那個資料夾內的所有子資料夾(與子資料夾內的資夾)，並會出現All，點選他代表如同現在版本一樣，
+把父資料夾內的所有子資料夾的檔案都一起列成播放清單，而點選子資料夾就只把他裡面的內容列在播放清單中播放(此資料夾依照A-Z排序)
+選擇資料夾
+Ultimate Vocal Remover
+|_All
+|_Others(下面若沒有子資料夾，就不用再展開多一個All按鈕)
+|_MyGo!!!!! to Ave Mujica (Crychic in the middle XD)
+  |_All
+  |_LiveSpeialVersion
+Sample Music
+|_All
+請仔細思考後再開始寫程式碼，并完整輸出你所有有修改的程式碼
+!!!請勿刪除任何一行註解，也不要壓縮程式碼!!! 超重要!!!
+{
+      "path": "Ultimate Vocal Remover",
+      "tracks": [
+        {
+          "filename": "1_04.I Don't Even Know Your Name   Aftertaste   Kid In Love   I Want You Back (Live Medley)_",
+          "audioTracks": [
+            {
+              "filename": "1_04.I Don't Even Know Your Name   Aftertaste   Kid In Love   I Want You Back (Live Medley)_(Vocals).mp3",
+              "relPath": "Ultimate Vocal Remover/Others/1_04.I Don't Even Know Your Name   Aftertaste   Kid In Love   I Want You Back (Live Medley)_(Vocals).mp3",
+              "blobUrl": "blob:http://127.0.0.1:5501/213b53c3-6055-4792-b8ce-1cbe913d544a",
+              "volume": 85,
+              "mute": false,
+              "suffix": "Vocals"
+            },
+            {
+              "filename": "1_04.I Don't Even Know Your Name   Aftertaste   Kid In Love   I Want You Back (Live Medley)_(Instrumental).mp3",
+              "relPath": "Ultimate Vocal Remover/Others/1_04.I Don't Even Know Your Name   Aftertaste   Kid In Love   I Want You Back (Live Medley)_(Instrumental).mp3",
+              "blobUrl": "blob:http://127.0.0.1:5501/e7b391b9-ac3a-4ca8-8df0-0509ab2b903f",
+              "volume": 85,
+              "mute": false,
+              "suffix": "Instrumental"
+            }
+          ],
+          "lyricsFile": null
+        },
+        {
+          "filename": "1_001.迷星叫_",
+          "audioTracks": [
+            {
+              "filename": "1_001.迷星叫_(Bass).mp3",
+              "relPath": "Ultimate Vocal Remover/MyGo!!!!! to Ave Mujica (Crychic in the middle XD)/1_001.迷星叫_(Bass).mp3",
+              "blobUrl": "blob:http://127.0.0.1:5501/0f1e7ea5-6baa-456c-8fae-3e173ed1dc37",
+              "volume": 58,
+              "mute": false,
+              "suffix": "Bass"
+            },
+{
+      "path": "Sample Music",
+      "tracks": [
+        {
+          "filename": "1_999.迷星叫_",
+          "audioTracks": [
+            {
+              "filename": "1_999.迷星叫_(Vocals).mp3",
+              "relPath": "Sample Music/1_999.迷星叫_(Vocals).mp3",
+              "blobUrl": "blob:http://127.0.0.1:5501/352804e4-f619-45c2-8d81-7cc64bc1a033",
+              "volume": 88,
+              "mute": false,
+              "suffix": "Vocals"
+            },
