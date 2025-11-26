@@ -419,7 +419,7 @@ app.js:371 播放清單已更新 [Sample Music]，共 0 首
 用我這次傳的app.js去修改
 
 ### 請Gemini 3 Pro預覽版協助在播放清單Folder切換鈕可以切進相對路徑內的資料夾
-#### 1st
+#### 1st Good!!!
 `附上本專案所有程式碼文件，排除vscode和git設定以及 需求.txt`
 `雖然Gemini 3 Pro總共可以接受超過100萬tokens的輸出入加總，但會累加目前已使用超過40萬，感覺AI稍微變笨所以新開聊天，這一次使用Build模式`
 你好請你仔細瀏覽我傳所有的程式碼，我希望你幫我在播放清單的資料夾切換按鈕更改為可以切換進去只播放相對路徑內的資料夾(子資料夾子之子資料夾)
@@ -493,3 +493,69 @@ Sample Music
               "mute": false,
               "suffix": "Vocals"
             },
+
+### 請Gemini 3 Pro預覽版把子資料夾內的排序儲存在新json key-value relPathXOrder，動態歌詞播放功能增加offset調整顯示上面一點或下面一點
+#### 1st 
+`附上本專案所有程式碼文件，排除vscode和git設定以及 需求.txt`
+謝謝你之前已經幫我在播放清單的資料夾切換按鈕更改為可以切換進去只播放相對路徑內的資料夾，運作的十分不錯
+但是美中不足的是當我切換到子資料夾之內播放時，拖曳子資料夾裡面的播放順序就沒有效了，我希望進入到子資料夾子與子子(子*n)資料夾，
+都可以在播放清單頁面調整對應那個資料夾內的播放順序，我想到的實作方式是，把目前播放清單排序的方式改為將資料夾內的排序儲存在新的json key-value relPathXOrder
+其中relPathXOrder的X代表位於父資夾(path的值)內的第幾層，在父資料夾內就設為0，也就是relPath0Order，如果在父資料夾下面一層子資料夾內的話就是relPath1Order
+，再如果於父資料夾下面一層子資料夾內的再裡面一層子資料夾的話就是relPath2Order，以此類推也就是利用它相對於父資料夾的下面第n層來儲存順序變數，
+但同時越底層(也就是越多層子資料夾包覆的)的歌曲，就必須記錄越多層的順序變數，我以下面的json例子來實際示範
+父資料夾"path": "Ultimate Vocal Remover"，與他同層的有一首歌"filename": test1"，它的音軌有"relPath": "Ultimate Vocal Remover/test1_(Vocals).mp3"
+、等多個音軌檔案，因為這個歌曲直接與傅齊父資料同一層，所以只需使用 relPath0Order 紀錄他在選擇Ultimate Vocal Remover並選取All的時候的播放順序，
+這個變數要與filename，位於同一層，因為每首歌曲的多個音軌檔案都會在同一個相對路徑下，舉例像是這樣"filename": "test1","relPath0Order":13，
+代表他在這層的播放清單下播放順序是第13首，然後我再舉個蠻複雜的多層子資料夾例子，使用"filename": "1_001.迷星叫_"這首來作說明
+你可以看到他一樣位於父資料夾"path": "Ultimate Vocal Remover"底下，他的"relPath": "Ultimate Vocal Remover/Playlists/MyGo!!!!! to Ave Mujica (Crychic in the middle XD)/1_001.迷星叫_(Bass).mp3",是在父資料夾下的第2層，所以他就會需要建立3個relPathXOrder，用來儲存他在各層資料夾選擇ALL的
+播放清單下的播放順序，像是以下這樣
+"filename": "1_001.迷星叫_","relPath0Order":31,"relPath1Order":7,"relPath2Order":1,
+"relPath0Order":31代表他在Ultimate Vocal Remover選取All的時候的播放順序是31
+"relPath1Order":7代表他在Ultimate Vocal Remover/Playlists選取All的時候的播放順序是7
+"relPath2Order":1代表他在Ultimate Vocal Remover/Playlists/MyGo!!!!! to Ave Mujica (Crychic in the middle XD)選取All的時候的播放順序是1
+其他歌曲也以此類推，假設這首歌或者這個子資料夾是第一次載入，就依照目前的檔案載入的順序去幫他對應這些relPathXOrder的變數給予對應的預設值
+
+  "folders": [
+    {
+      "path": "Ultimate Vocal Remover",
+      "tracks": [
+        {
+          "filename": "test1",
+          "audioTracks": [
+            {
+              "filename": "test1_(Vocals).mp3",
+              "relPath": "Ultimate Vocal Remover/test1_(Vocals).mp3",
+              ...省略
+        {
+          "filename": "1_04.I Don't Even Know Your Name   Aftertaste   Kid In Love   I Want You Back (Live Medley)_",
+          "audioTracks": [
+            {
+              "filename": "1_04.I Don't Even Know Your Name   Aftertaste   Kid In Love   I Want You Back (Live Medley)_(Vocals).mp3",
+              "relPath": "Ultimate Vocal Remover/Others/1_04.I Don't Even Know Your Name   Aftertaste   Kid In Love   I Want You Back (Live Medley)_(Vocals).mp3",
+              ...省略
+        {
+          "filename": "1_001.迷星叫_",
+          "audioTracks": [
+            {
+              "filename": "1_001.迷星叫_(Bass).mp3",
+              "relPath": "Ultimate Vocal Remover/Playlists/MyGo!!!!! to Ave Mujica (Crychic in the middle XD)/1_001.迷星叫_(Bass).mp3",
+              ...省略
+        {
+          "filename": "4_[04].Dried Flowers -Orchestral Arrangement Version-_",
+          "audioTracks": [
+            {
+              "filename": "4_[04].Dried Flowers -Orchestral Arrangement Version-_(Bass).mp3",
+              "relPath": "Ultimate Vocal Remover/Albums/Hibiku響-Yuuri優里/4_[04].Dried Flowers -Orchestral Arrangement Version-_(Bass).mp3",
+              ...省略
+    {
+      "path": "Sample Music",
+      "tracks": [
+        {
+          "filename": "13_997.栞_",
+          "audioTracks": [
+            {
+              "filename": "13_997.栞_(Drums).mp3",
+              "relPath": "Sample Music/13_997.栞_(Drums).mp3",
+
+請你仔細瀏覽我傳所有的程式碼，並仔細思考後再開始寫程式碼，請完整輸出你所有有修改的程式碼
+!!!請勿刪除任何一行註解，也不要壓縮程式碼!!! 超重要!!! 謝謝~

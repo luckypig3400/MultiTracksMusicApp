@@ -1,3 +1,4 @@
+
 // playlist.js — 修正版：新增切換資料夾功能，並根據 activeFolderPath 顯示清單
 
 (function () {
@@ -34,43 +35,60 @@
     return currentTracks;
   }
 
+  // 計算路徑深度差 (需與 app.js 邏輯一致)
+  function calcFolderDepth(rootPath, currentPath) {
+    // 簡單實作正規化
+    const normalize = p => p.replace(/\\/g, '/').replace(/\/+$/, '');
+    const normRoot = normalize(rootPath);
+    const normCurr = normalize(currentPath);
+
+    if (normCurr === normRoot) return 0;
+    if (normCurr.startsWith(normRoot + '/')) {
+      const sub = normCurr.substring(normRoot.length + 1);
+      return sub.split('/').length;
+    }
+    return 0;
+  }
+
   function persistTracks() {
-    // 將 currentTracks 的順序寫回 config 中對應的 activeFolder
+    // 將 currentTracks 的順序寫回 config 
+    // 【修改】邏輯：根據目前的資料夾深度，寫入 relPathXOrder 屬性到每個 track
     const cfg = getConfig();
     const activePath = cfg.activeFolderPath;
 
     if (!activePath || !cfg.folders) return;
 
-    // 這裡的邏輯需要調整：因為 activePath 可能是一個子目錄
-    // 我們需要找到這個子目錄對應的 Root Config Folder
-    // 注意：這裡只處理排序存檔，對於子目錄的排序，目前邏輯可能只會影響 "Root Folder" 內的 track 順序
-    // 如果是子目錄，這會變得複雜。
-    // 暫時策略：找到 Root Folder，把所有 tracks 取出來，
-    // 然後依照 currentTracks 的順序重新排列 Root Folder 內的 tracks (僅針對有顯示的部分)
-    // 但因為 currentTracks 只是 activePath 內的子集，直接覆蓋會導致其他資料夾的 tracks 遺失或順序亂掉
-    // 因此：僅當 activePath 等於 Root Path 時才執行完整覆蓋排序。
-    // 若為子目錄，暫時不支援排序持久化回 config (或需更複雜邏輯)，以避免資料遺失。
-
     // 簡單正規化比對
     const normActive = activePath.replace(/\\/g, '/').replace(/\/+$/, '');
 
+    // 找到對應的 Root Config Folder
     const folder = cfg.folders.find(f => {
       const p = f.path.replace(/\\/g, '/').replace(/\/+$/, '');
-      return normActive === p; // 嚴格比對，只支援 Root Folder 排序存檔
+      return normActive === p || normActive.startsWith(p + '/');
     });
 
     if (folder) {
-      // 這裡比較 tricky，因為 currentTracks 只有 baseName，缺少 lyricsFile 等資訊
-      // 我們需要從 folder.tracks 原本的資料中，依照 currentTracks 的順序重新排列
+      // 1. 計算深度 -> 決定 Key 名稱
+      const depth = calcFolderDepth(folder.path, activePath);
+      const orderKey = `relPath${depth}Order`;
+      log(`Persisting order for depth ${depth}, Key: ${orderKey}`);
+
+      // 2. 建立 Config Tracks 的 Map 以便快速查找
       const trackMap = new Map();
       folder.tracks.forEach(t => trackMap.set(t.filename, t));
 
-      folder.tracks = currentTracks.map(ct => trackMap.get(ct.baseName)).filter(t => t);
+      // 3. 依照目前的 UI 順序 (currentTracks)，更新 config track 的 orderKey
+      currentTracks.forEach((ct, index) => {
+        const configTrack = trackMap.get(ct.baseName);
+        if (configTrack) {
+          configTrack[orderKey] = index;
+        }
+      });
 
       saveConfig(cfg);
-      log('persistTracks: saved order for root folder', folder.path);
+      log('persistTracks: updated order properties.');
     } else {
-      log('persistTracks: skipping sort save for sub-folder or not found');
+      log('persistTracks: Root folder not found for path:', activePath);
     }
   }
 

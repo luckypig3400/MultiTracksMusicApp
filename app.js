@@ -1,3 +1,4 @@
+
 // app.js
 
 let config = null;
@@ -26,6 +27,21 @@ let isVerifyingSync = false;
 function normalizePath(p) {
   if (!p) return '';
   return p.replace(/\\/g, '/').replace(/\/+/g, '/').replace(/\/+$/, '');
+}
+
+// 計算路徑深度差 (用於決定 relPathXOrder 的 X)
+// root: "UVR", path: "UVR" -> 0
+// root: "UVR", path: "UVR/Sub" -> 1
+function calcFolderDepth(rootPath, currentPath) {
+  const normRoot = normalizePath(rootPath);
+  const normCurr = normalizePath(currentPath);
+
+  if (normCurr === normRoot) return 0;
+  if (normCurr.startsWith(normRoot + '/')) {
+    const sub = normCurr.substring(normRoot.length + 1);
+    return sub.split('/').length;
+  }
+  return 0; // Fallback
 }
 
 function readConfig() {
@@ -320,6 +336,7 @@ function handleFolderSelect(fileList) {
 }
 
 // 【BUG 修復】：scanFiles 必須在有新檔案時，強制更新 activeFolderPath
+// 【修改】：保留 relPathXOrder 排序參數
 function scanFiles(files) {
   const validAudioExt = ['mp3', 'wav', 'flac', 'm4a', 'aac', 'ogg'];
   const folderMaps = {}; // 存放本次掃描到的檔案結構
@@ -357,22 +374,33 @@ function scanFiles(files) {
     }
     const mainName = suffix ? nameNoExt.replace(new RegExp(`\\(${suffix}\\)$`), '').trim() : nameNoExt;
 
-    // 嘗試從現有 config 找回舊音量設定
+    // 嘗試從現有 config 找回舊音量設定 與 排序設定
     let oldVolume = 85;
     let oldMute = false;
+    let oldOrders = {}; // 用來存 relPathXOrder
+
     for (let folderCfg of config.folders) {
-      for (let track of folderCfg.tracks || []) {
-        const match = track.audioTracks?.find(a => a.relPath === relPath);
-        if (match) {
-          oldVolume = match.volume ?? 85;
-          oldMute = match.mute ?? false;
-          break;
+      const matchTrack = folderCfg.tracks?.find(t => t.filename === mainName);
+      if (matchTrack) {
+        // 抓出所有 relPathXOrder 屬性
+        Object.keys(matchTrack).forEach(key => {
+          if (/^relPath\d+Order$/.test(key)) {
+            oldOrders[key] = matchTrack[key];
+          }
+        });
+
+        // 找音量 (從第一個符合的 audioTrack)
+        const matchAudio = matchTrack.audioTracks?.find(a => a.relPath === relPath);
+        if (matchAudio) {
+          oldVolume = matchAudio.volume ?? 85;
+          oldMute = matchAudio.mute ?? false;
         }
+        if (Object.keys(oldOrders).length > 0 || matchAudio) break;
       }
     }
 
     const blobUrl = URL.createObjectURL(file);
-    const entry = { filename: name, relPath, blobUrl, volume: oldVolume, mute: oldMute, suffix };
+    const entry = { filename: name, relPath, blobUrl, volume: oldVolume, mute: oldMute, suffix, oldOrders };
 
     const folderKey = normalizePath(folder || ''); // 統一路徑格式
 
@@ -395,13 +423,23 @@ function scanFiles(files) {
     }
 
     const map = folderMaps[targetFolderKey];
-    // 備份該資料夾原本的順序
+    // 備份該資料夾原本的順序 (保留舊 tracks 的參考，用來恢復排序屬性，雖然上面已經做了一次查找，但這裡是針對資料夾內的重建)
+    const oldTracksMap = new Map();
+    if (folderCfg.tracks) {
+      folderCfg.tracks.forEach(t => oldTracksMap.set(t.filename, t));
+    }
+
+    // 備份該資料夾原本的順序 (Filename List)
     const oldOrder = (folderCfg.tracks || []).map(t => t.filename);
 
     // 清空該資料夾的 tracks，準備重建 (因為這是「重新掃描該資料夾」的行為)
     folderCfg.tracks = [];
 
     const createTrackEntry = (mainName) => {
+      // 取得第一筆 entry 裡面的 oldOrders (因為同一首歌的 oldOrders 應該一樣)
+      const firstEntry = map[mainName][0];
+      const recoveredOrders = firstEntry.oldOrders || {};
+
       const audioTracks = map[mainName].map(t => ({
         filename: t.filename,
         relPath: t.relPath,
@@ -431,10 +469,16 @@ function scanFiles(files) {
         console.log(`[${targetFolderKey}] 字幕配對: ${mainName} <-> SRT`);
       }
 
-      return { filename: mainName, audioTracks, lyricsFile: matchedSrt };
+      // 建立新物件，並展開 recoveredOrders
+      return {
+        filename: mainName,
+        audioTracks,
+        lyricsFile: matchedSrt,
+        ...recoveredOrders // 寫回 relPathXOrder
+      };
     };
 
-    // A. 依照舊順序加入
+    // A. 依照舊順序加入 (Array Order)
     oldOrder.forEach(mainName => {
       if (map[mainName]) {
         folderCfg.tracks.push(createTrackEntry(mainName));
@@ -464,9 +508,8 @@ function scanFiles(files) {
   generateTrackListFromConfig();
 }
 
-// 【Modified】支援子資料夾過濾
+// 【Modified】支援子資料夾過濾 與 多層次排序
 // 只載入 config.activeFolderPath 指定的資料夾或子資料夾
-// activeFolderPath 可以是根目錄 (如 "Ultimate Vocal Remover") 也可以是子目錄 (如 "Ultimate Vocal Remover/Others")
 function generateTrackListFromConfig() {
   const newTracks = [];
   if (!config.folders || config.folders.length === 0) {
@@ -490,6 +533,9 @@ function generateTrackListFromConfig() {
     console.warn(`Target folder not found for path [${normActivePath}], defaulting to [${config.activeFolderPath}]`);
   }
 
+  // 暫存符合條件的 tracks，準備進行排序
+  let validTracks = [];
+
   if (targetFolder && targetFolder.tracks) {
     targetFolder.tracks.forEach(t => {
       // 2. 過濾 tracks
@@ -499,39 +545,56 @@ function generateTrackListFromConfig() {
         const fullRelPath = normalizePath(t.audioTracks[0].relPath);
 
         // 取得檔案所在的目錄路徑
-        // 例如 fullRelPath: "Root/Sub/Song.mp3" -> dirPath: "Root/Sub"
         const lastSlash = fullRelPath.lastIndexOf('/');
         const dirPath = lastSlash !== -1 ? fullRelPath.substring(0, lastSlash) : "";
 
-        // 判斷邏輯：
-        // 如果 activeFolderPath 是 "Root"，則 "Root/Song.mp3" 和 "Root/Sub/Song.mp3" 都應該包含 (遞迴)
-        // 如果 activeFolderPath 是 "Root/Sub"，則只有 "Root/Sub/..." 的檔案被包含
-        // 這裡我們採用 "Starts With" 邏輯來達成遞迴包含的效果
-
-        // 修正：要比對的是 dirPath 是否以 activeFolderPath 開頭
-        // 例如 active: "Root", dir: "Root/Sub" -> Match
-        // 例如 active: "Root/Sub", dir: "Root/Other" -> No Match
-        // 另外需考慮邊界，避免 "Root/Sub2" match "Root/Sub"
-        // 因此標準化路徑後，比對是否相等，或是以 (activePath + '/') 開頭
-
+        // 判斷邏輯：Starts With
         const isMatch = (dirPath === config.activeFolderPath) ||
           dirPath.startsWith(config.activeFolderPath + '/');
 
         if (isMatch) {
-          newTracks.push({
-            baseName: t.filename,
-            audioTracks: t.audioTracks.map(at => ({ ...at })),
-            lyricsFile: t.lyricsFile
+          validTracks.push({
+            configTrack: t, // 保留原始 config 參照以供排序讀取
+            uiTrack: {
+              baseName: t.filename,
+              audioTracks: t.audioTracks.map(at => ({ ...at })),
+              lyricsFile: t.lyricsFile
+            }
           });
         }
       }
     });
   }
 
-  tracks = newTracks;
+  // 3. 根據層級深度進行排序
+  const depth = calcFolderDepth(targetFolder.path, config.activeFolderPath);
+  const orderKey = `relPath${depth}Order`;
+
+  // 排序邏輯：
+  // 如果有 orderKey，數值小的排前面。
+  // 如果沒有 orderKey (新歌)，則預設視為非常大 (排在後面)，並保持原本 scan 的相對順序 (Stable Sort)
+  validTracks.sort((a, b) => {
+    const orderA = a.configTrack[orderKey];
+    const orderB = b.configTrack[orderKey];
+
+    // 如果兩者都有設定順序，比較順序
+    if (orderA !== undefined && orderB !== undefined) {
+      return orderA - orderB;
+    }
+    // 如果 A 有 B 沒有，A 排前面
+    if (orderA !== undefined) return -1;
+    // 如果 B 有 A 沒有，B 排前面
+    if (orderB !== undefined) return 1;
+
+    // 都沒有順序，保持原樣 (因為 Array.sort 在現代瀏覽器通常是 stable，但為了保險可以不回傳 0 以外的值)
+    return 0;
+  });
+
+  // 轉回 UI 需要的格式
+  tracks = validTracks.map(vt => vt.uiTrack);
   window.tracks = tracks; // 同步全域
 
-  console.log(`播放清單已更新 [${config.activeFolderPath}]，共 ${tracks.length} 首`);
+  console.log(`播放清單已更新 [${config.activeFolderPath}] (Depth: ${depth})，共 ${tracks.length} 首`);
 
   // 重置索引並載入第一首 (避免重整後不自動準備播放)
   if (tracks.length > 0 && audioElements.length === 0) {
