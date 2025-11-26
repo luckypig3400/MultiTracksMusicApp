@@ -337,6 +337,7 @@ function handleFolderSelect(fileList) {
 
 // 【BUG 修復】：scanFiles 必須在有新檔案時，強制更新 activeFolderPath
 // 【修改】：保留 relPathXOrder 排序參數
+// 【修改】：修復檔案移動後音量重置問題 (Bug 1)，以及Active Folder重置問題 (Bug 2)
 function scanFiles(files) {
   const validAudioExt = ['mp3', 'wav', 'flac', 'm4a', 'aac', 'ogg'];
   const folderMaps = {}; // 存放本次掃描到的檔案結構
@@ -389,8 +390,11 @@ function scanFiles(files) {
           }
         });
 
-        // 找音量 (從第一個符合的 audioTrack)
-        const matchAudio = matchTrack.audioTracks?.find(a => a.relPath === relPath);
+        // 【Bug 1 修復】：這裡原本是比對 relPath，現在改為比對 filename
+        // 只要檔名相同 (例如 "1_001.迷星叫_(Bass).mp3")，就視為同一首歌的該音軌，
+        // 即使它被移動到子目錄下，也能找回音量設定。
+        const matchAudio = matchTrack.audioTracks?.find(a => a.filename === name);
+
         if (matchAudio) {
           oldVolume = matchAudio.volume ?? 85;
           oldMute = matchAudio.mute ?? false;
@@ -492,10 +496,26 @@ function scanFiles(files) {
     });
   });
 
-  // 【關鍵修正】：如果本次掃描有結果，強制將 activeFolderPath 切換到第一個被更新的資料夾
-  // 這解決了「原本停留在 Sample Music，但使用者選擇了本地資料夾後，播放器還是顯示空的 Sample Music」的問題
+  // 【BUG 2 修復】：如果本次掃描有結果，先檢查當前的 activeFolderPath 是否有效
+  // 如果有效 (即位於本次掃描的根目錄下)，則保留，不要強制跳回 Root
   const scannedFolderKeys = Object.keys(folderMaps);
-  if (scannedFolderKeys.length > 0) {
+  let isCurrentActiveValid = false;
+
+  if (config.activeFolderPath && scannedFolderKeys.length > 0) {
+    const normActive = normalizePath(config.activeFolderPath);
+    // 檢查 activePath 是否屬於本次掃描到的任一 Root Folder (或者是其子目錄)
+    for (const rootKey of scannedFolderKeys) {
+      const normRoot = normalizePath(rootKey);
+      if (normActive === normRoot || normActive.startsWith(normRoot + '/')) {
+        isCurrentActiveValid = true;
+        break;
+      }
+    }
+  }
+
+  if (isCurrentActiveValid) {
+    console.log(`保留原本 Active Folder: [${config.activeFolderPath}]`);
+  } else if (scannedFolderKeys.length > 0) {
     // 優先選擇第一個掃描到的資料夾
     config.activeFolderPath = scannedFolderKeys[0];
     console.log(`Active Folder Switched to: [${config.activeFolderPath}]`);
