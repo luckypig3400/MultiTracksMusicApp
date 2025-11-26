@@ -1,6 +1,9 @@
 # MultiTracksMusicApp
 可以同時播放多個音軌的播放器，UVR5、StemRoller音訊分離處理的相同檔名，不同樂器的音軌
 
+## 找、轉換LRC歌詞為SRT功能
++ 轉換器的程式碼下載自這個網站:
+https://poyakong.github.io/LRC_to_SRT_html/
 ## Prompts
 ### 請ChatGPT寫播放清單的功能
 請仔細看目前的畫布app.js

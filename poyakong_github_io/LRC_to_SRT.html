@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>LRC to SRT Converter</title>
+	<style>
+		body {
+			font-family: Arial, sans-serif;
+			max-width: 800px;
+			margin: 0 auto;
+			padding: 20px;
+			line-height: 1.6;
+		}
+
+		h1 {
+			text-align: center;
+			color: #333;
+		}
+
+		.container {
+			display: flex;
+			gap: 20px;
+		}
+
+		.column {
+			flex: 1;
+		}
+
+		textarea {
+			width: 100%;
+			height: 400px;
+			padding: 10px;
+			border: 1px solid #ccc;
+			border-radius: 4px;
+			font-family: monospace;
+			resize: vertical;
+		}
+
+		.controls {
+			display: flex;
+			gap: 10px;
+			margin: 15px 0;
+		}
+
+		button {
+			padding: 10px 15px;
+			background-color: #4CAF50;
+			color: white;
+			border: none;
+			border-radius: 4px;
+			cursor: pointer;
+		}
+
+		button:hover {
+			background-color: #45a049;
+		}
+
+		.file-input {
+			margin-bottom: 15px;
+		}
+
+		#info {
+			margin-top: 15px;
+			color: #666;
+			font-size: 0.9em;
+		}
+
+		.edited {
+			background-color: #fafad2;
+		}
+	</style>
+</head>
+
+<body>
+	<h1>LRC to SRT Converter</h1>
+	<div class="file-input">
+		<input type="file" id="lrcFile" accept=".lrc">
+	</div>
+
+	<div class="container">
+		<div class="column">
+			<h3>LRC Input:</h3>
+			<textarea id="lrcInput" placeholder="Paste your LRC content here or load from a file..."></textarea>
+		</div>
+		<div class="column">
+			<h3>SRT Output:</h3>
+			<textarea id="srtOutput" placeholder="SRT conversion will appear here..."></textarea>
+		</div>
+	</div>
+
+	<div class="controls">
+		<button id="convertBtn">Convert LRC to SRT</button>
+		<button id="downloadBtn">Download SRT File</button>
+	</div>
+
+	<div id="info">
+		<h3>About the Converter:</h3>
+		<p>This tool converts LRC format (used for song lyrics) to SRT format (used for video subtitles).</p>
+		<p>Special features:</p>
+		<ul>
+			<li>Lines with the same timestamp will be merged into a single SRT entry with line breaks between them</li>
+			<li>The SRT output can be edited before downloading</li>
+			<li>Cleans input by standardizing line breaks and removing invalid lines</li>
+		</ul>
+	</div>
+
+<script>
+	const lrcFileInput = document.getElementById('lrcFile');
+	const lrcInput = document.getElementById('lrcInput');
+	const srtOutput = document.getElementById('srtOutput');
+	const convertBtn = document.getElementById('convertBtn');
+	const downloadBtn = document.getElementById('downloadBtn');
+
+	let outputEdited = false;
+
+	// Handle file input
+	lrcFileInput.addEventListener('change', function (e) {
+		const file = e.target.files[0];
+		if (file) {
+			const reader = new FileReader();
+			reader.readAsText(file);
+			reader.onload = function (event) {
+				lrcInput.value = event.target.result;
+			};
+		}
+	});
+
+	// Track changes to SRT output
+	// srtOutput.addEventListener('input', function () {
+	//     outputEdited = true;
+	//     //srtOutput.classList.add('edited');
+	// });
+
+	// Convert LRC to SRT
+	convertBtn.addEventListener('click', function () {
+		const lrcContent = lrcInput.value;
+		// 检查内容是否为空
+		if (!lrcContent.trim()) {
+			alert('LRC区域的内容为空');
+			return;
+		}
+
+		// 检测SRT输出是否有内容
+		if (!(srtOutput.value === '') && !confirm('你确定要覆盖原有的SRT输出吗？')) {
+			return;
+		}
+
+		const srtContent = convertLrcToSrt(lrcContent);
+		srtOutput.value = srtContent;
+		outputEdited = false;
+		// srtOutput.classList.remove('edited');
+	});
+
+	// Download SRT file
+	downloadBtn.addEventListener('click', function () {
+		const srtContent = srtOutput.value;
+		if (!srtContent.trim()) {
+			alert('Please convert LRC to SRT first');
+			return;
+		}
+
+		const blob = new Blob([srtContent], { type: 'text/plain' });
+		const url = URL.createObjectURL(blob);
+		const a = document.createElement('a');
+		a.href = url;
+		a.download = 'converted.srt';
+		document.body.appendChild(a);
+		a.click();
+		document.body.removeChild(a);
+		URL.revokeObjectURL(url);
+	});
+
+	// LRC to SRT conversion function
+	function convertLrcToSrt(lrcContent) {
+
+		// Filter用于过滤并移除lrc中的非歌词内容
+		lrcContent = cleanLrcContent(lrcContent);
+
+		// 将清洁后的内容为IrcInput同步更新
+		lrcInput.value = lrcContent;
+
+		// Parse LRC content
+		const lines = lrcContent.split('\r\n');
+		// \[ 和 \]：分别匹配时间标签的左右方括号，由于方括号在正则里有特殊含义，所以需要用反斜杠转义
+		// (\d{2})：匹配两位数字，第一个捕获组 (\d{2}) 用于捕获分钟数，第二个捕获组 (\d{2}) 用于捕获秒数
+		// \.：匹配时间标签里的小数点，由于小数点在正则里有特殊含义，所以需要用反斜杠转义
+		// (\d{2,3})：匹配 2 到 3 位数字，第三个捕获组用于捕获毫秒数
+		const timeRegex = /\[(\d{2}):(\d{2})\.(\d{2,3})\]/;
+		// 创建一个空数组 parsedLines，用于存储解析后的 LRC 行信息(const用于固定数组地址)
+		const parsedLines = [];
+
+		// Step 1: Parse all LRC lines
+		// 20250401 为非Chrome浏览器添加稳定排序支持，保持歌词排序的一致性
+		let currentIndex = 0;
+		// 遍历 LRC 内容分割后的每一行
+		lines.forEach(line => {
+			// 使用正则表达式 timeRegex 全局匹配当前行中的所有时间标签
+			const timeMatches = line.match(new RegExp(timeRegex, 'g'));
+			// 如果当前行存在时间标签
+			if (timeMatches) {
+				// 移除当前行中的所有时间标签，并去除前后空格，得到歌词文本
+				const text = line.replace(new RegExp(timeRegex, 'g'), '').trim();
+				// 如果歌词文本为空则跳过
+				// if (text) {
+					// 遍历当前行中匹配到的所有时间标签
+					timeMatches.forEach(timeMatch => {
+						// 使用原始的 timeRegex 正则表达式再次匹配单个时间标签，获取捕获组内容
+						const matches = timeMatch.match(timeRegex);
+						// 如果匹配成功，提取时间标签中的分钟数、秒数和毫秒数
+						if (matches) {
+							// 在当前代码里，正则表达式 timeRegex 定义如下：
+							// const timeRegex = /\[(\d{2}):(\d{2})\.(\d{2,3})\]/;
+							// 这里面有三个捕获组：
+							// (\d{2})：用于匹配分钟数。
+							// (\d{2})：用于匹配秒数。
+							// (\d{2,3})：用于匹配毫秒数。
+							// 当执行 const matches = timeMatch.match(timeRegex); 时，如果匹配成功，matches 数组会包含以下内容：
+							// matches[0]：整个匹配到的时间标签，例如 [01:23.456]
+							// matches[1]：第一个捕获组匹配到的分钟数，例如 01
+							// matches[2]：第二个捕获组匹配到的秒数，例如 23
+							// matches[3]：第三个捕获组匹配到的毫秒数，例如 456
+
+							// 从捕获组中提取分钟数，并转换为整数
+							const minutes = parseInt(matches[1]);
+							// 从捕获组中提取秒数，并转换为整数
+							const seconds = parseInt(matches[2]);
+
+							// Handle varying precision in LRC milliseconds
+							// 从捕获组中提取毫秒数部分
+							let milliseconds = matches[3];
+							// 如果毫秒数部分只有两位数字
+							if (milliseconds.length === 2) {
+								// 将其乘以 10 转换为三位数字对应的毫秒数
+								milliseconds = parseInt(milliseconds) * 10;
+							} else {
+								// 否则直接转换为整数
+								milliseconds = parseInt(milliseconds);
+							}
+
+							// Store each line with its timestamp in milliseconds for easy sorting
+							// 计算当前时间标签对应的总毫秒数
+							const timestamp = minutes * 60000 + seconds * 1000 + milliseconds;
+							// 将时间戳和歌词文本以对象形式添加到 parsedLines 数组中
+							parsedLines.push({
+								timestamp,
+								text,
+								index: currentIndex++
+							});
+						}
+					});
+				// }
+			}
+		});
+
+		// Step 2: Sort by timestamp
+		parsedLines.sort((a, b) => {
+			if(a.timestamp !== b.timestamp){
+				return a.timestamp - b.timestamp;
+			}
+			// 当时间戳相等时，比较原始索引，保证稳定排序
+			return a.index - b.index;
+		});
+
+		// Step 3: Group lines with the same timestamp
+		// 用于存储分组后的结果，每个元素是一个包含相同时间戳歌词的分组对象
+		const groupedLines = [];
+		// 用于临时存储当前正在处理的分组对象，初始为 null
+		let tempCurrentGroup = null;
+
+		// 遍历解析后的歌词行数组
+		parsedLines.forEach(line => {
+			// 检查是否为第一轮循环，并检查上一轮循环的时间戳是否已经合并结束
+			if (!tempCurrentGroup || tempCurrentGroup.timestamp !== line.timestamp) {
+				// 如果临时分组存在，说明上一个分组已经处理完，且时间戳已错开，将临时结果push到结果数组中
+				if (tempCurrentGroup) {
+					groupedLines.push(tempCurrentGroup);
+				}
+				// 创建一个新的临时分组对象，设置时间戳并将当前行的歌词文本作为数组的第一个元素
+				tempCurrentGroup = {
+					timestamp: line.timestamp,
+					texts: [line.text]
+				};
+			} else {
+				// 如果自身并非当前时间戳的唯一行，且时间戳相同，将当前行的歌词文本添加到当前分组的歌词数组中
+				tempCurrentGroup.texts.push(line.text);
+			}
+		});
+
+		// 处理最后一个分组，因为遍历结束后最后一个分组可能还未添加到结果数组中
+		if (tempCurrentGroup) {
+			groupedLines.push(tempCurrentGroup);
+		}
+
+		// Step 4: Convert to SRT format
+		// 遍历分组后的歌词数据，每个分组包含相同时间戳的歌词
+		groupedLines.forEach((tempCurrentGroup, index) => {
+			// 调用 formatSrtTime 函数，将当前分组的时间戳转换为 SRT 格式的开始时间
+			tempCurrentGroup.startTime = formatSrtTime(tempCurrentGroup.timestamp);
+
+			// Determine end time (use next timestamp or add 3 seconds if last)
+			// 如果当前分组不是最后一个分组
+			if (index < groupedLines.length - 1) {
+				// 将下一个分组的时间戳转换为 SRT 格式的时间，作为当前字幕条目的结束时间
+				tempCurrentGroup.endTime = formatSrtTime(groupedLines[index + 1].timestamp);
+			} else {
+				// 如果是最后一个分组，在当前分组的时间戳基础上增加 5 秒，作为结束时间 (因为lrc本身没有定义结束时间)
+				tempCurrentGroup.endTime = formatSrtTime(tempCurrentGroup.timestamp + 5000); 
+			}
+		});
+		
+		// Step 5: 生成SRT，并排除空白的字幕
+		let srtContent = '';
+		let lineNumber = 1; // 初始化字幕编号
+		groupedLines.forEach((group) => {
+			// 合并歌词文本
+			const combinedText = group.texts.join('\r\n').trim();
+
+			// 忽略空白内容（包括仅含换行或空格）
+			if (combinedText === '') return;
+
+			// 拼接 SRT 内容
+			srtContent += lineNumber + '\r\n';
+			srtContent += group.startTime + ' --> ' + group.endTime + '\r\n';
+			srtContent += combinedText + '\r\n\r\n';
+
+			lineNumber++; // 递增字幕编号
+		});
+
+		// 返回最终生成的 SRT 格式内容
+		return srtContent;
+	}
+
+	//20250330 Functfion to escape special characters in a string for use in a regular expression
+	function escapeRegExp(str) {
+		return str.replace(/[.*+?^=!:${}()|\[\]\/\\]/g, '\\$&');
+	}
+
+	// Function to clean LRC content
+	function cleanLrcContent(content) {
+
+		//20250330 Fix edge case when lrc is not end with \n
+		//谢谢，这正则表达式和转译字符，要给我整郁郁了
+		//检查最后一行末尾是否缺少换行符，修补 "}," 为 \n"},"
+		content = content.replace(/\\n\"},\"/g, `"},"`);
+		content = content.replace(/\"},\"/g, `\\n"},"`);
+
+		//20250330 Fix edge case when lrc is not start with \n
+		// 检查第一行是否缺少换行符，修补 ":"[00:00.000] 为 ":"\n[00:00.000]
+		content = content.replace(/\"lyric\":\"\[0/g, '\"lyric\":\"\\n\[0');
+
+		// 1. Replace all "\n" strings with Windows line breaks
+		content = content.replace(/\\n/g, '\r\n');
+
+		// 2. Standardize all line breaks to Windows format
+		content = content.replace(/\r\n|\n|\r/g, '\r\n');
+
+		// 3. Remove all lines that don't start with "["
+		const lines = content.split('\r\n');
+		const filteredLines = lines.filter(line => line.trim().startsWith('['));
+
+		return filteredLines.join('\r\n');
+	}
+
+	// Format milliseconds timestamp to SRT time format (00:00:00,000)
+	function formatSrtTime(timestamp) {
+		const hours = Math.floor(timestamp / 3600000);
+		const minutes = Math.floor((timestamp % 3600000) / 60000);
+		const seconds = Math.floor((timestamp % 60000) / 1000);
+		const milliseconds = timestamp % 1000;
+
+		return padZero(hours, 2) + ':' +
+			padZero(minutes, 2) + ':' +
+			padZero(seconds, 2) + ',' +
+			padZero(milliseconds, 3);
+	}
+
+	// Helper to pad numbers with zeros
+	function padZero(num, width) {
+		const str = num.toString();
+		return str.length >= width ? str : new Array(width - str.length + 1).join('0') + str;
+	}
+</script>
+<!-- GoatCounter，注意要在渲染结束后加载，否则会阻塞默认渲染 -->
+<script>
+	window.addEventListener("load", function() {
+	  var s = document.createElement("script");
+	  s.src = "./count.js";
+	  s.async = true;
+	  s.setAttribute("data-goatcounter", "https://poyakong-lrc-to-srt-html.goatcounter.com/count");
+	  document.body.appendChild(s);
+	});
+</script>
+</body>
+
+</html>
