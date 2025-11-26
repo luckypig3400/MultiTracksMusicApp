@@ -1,3 +1,5 @@
+
+
 // setting.js — 修正版：改為 Modal 形式，支援不中斷播放，並新增強制重整功能與範本載入
 
 // 定義範本檔案列表
@@ -102,6 +104,9 @@ window.SettingsUI = (() => {
 
     // 更新 Debug 按鈕文字
     updateDebugButtonState();
+
+    // 更新 Seek Seconds Input
+    updateSeekInputState();
   }
 
   function closeSettings() {
@@ -121,6 +126,13 @@ window.SettingsUI = (() => {
       btn.innerHTML = '除錯訊息: 關';
       btn.style.color = '#555';
     }
+  }
+
+  function updateSeekInputState() {
+    const input = document.getElementById('input-seek-seconds');
+    if (!input) return;
+    const cfg = JSON.parse(localStorage.getItem('config') || '{}');
+    input.value = cfg.skipSeconds || 5;
   }
 
   function toggleDebugInfo() {
@@ -151,6 +163,11 @@ window.SettingsUI = (() => {
         padding:8px 12px; font-size:1rem; border-radius:8px; border:1px solid #ccc;
         background:white; cursor:pointer;
       }
+      .setting-control-group {
+        display: flex; align-items: center; gap: 8px; margin-bottom: 8px;
+        background: rgba(0,0,0,0.03); padding: 8px; border-radius: 8px;
+      }
+      .vscode-dark .setting-control-group { background: rgba(255,255,255,0.05); }
       #config-text {
         flex:1; width:100%; resize:none; padding:8px; font-family: monospace;
         font-size:0.9rem; border:1px solid #ccc; border-radius:6px; box-sizing:border-box; overflow:auto;
@@ -193,6 +210,36 @@ window.SettingsUI = (() => {
     btnContainer.appendChild(btnRemoveSample);
     btnContainer.appendChild(btnForceReload);
 
+    // 建立其他設定控制區
+    const settingsControlArea = document.createElement('div');
+
+    // 跳轉秒數設定
+    const seekGroup = document.createElement('div');
+    seekGroup.className = 'setting-control-group';
+    seekGroup.innerHTML = `<span>跳轉秒數 (Seek Seconds):</span>`;
+    const seekInput = document.createElement('input');
+    seekInput.type = 'number';
+    seekInput.id = 'input-seek-seconds';
+    seekInput.style.width = '60px';
+    seekInput.min = '1';
+    seekInput.max = '60';
+    seekInput.addEventListener('input', (e) => {
+      const val = parseInt(e.target.value);
+      if (val > 0) {
+        const cfg = JSON.parse(localStorage.getItem('config') || '{}');
+        cfg.skipSeconds = val;
+        localStorage.setItem('config', JSON.stringify(cfg));
+
+        // 即時更新 App 變數
+        if (window.AppAudioControl) {
+          window.AppAudioControl.setSkipSeconds(val);
+          window.AppAudioControl.saveConfig(); // 確保記憶體同步
+        }
+      }
+    });
+    seekGroup.appendChild(seekInput);
+    settingsControlArea.appendChild(seekGroup);
+
     // 建立 Textarea
     const textarea = document.createElement('textarea');
     textarea.id = 'config-text';
@@ -207,6 +254,7 @@ window.SettingsUI = (() => {
     fileInput.addEventListener('change', handleFileLoad);
 
     modal.appendChild(btnContainer);
+    modal.appendChild(settingsControlArea);
     modal.appendChild(textarea);
     modal.appendChild(fileInput);
     document.body.appendChild(modal);

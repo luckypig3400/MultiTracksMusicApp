@@ -1,4 +1,5 @@
 
+
 // app.js
 
 let config = null;
@@ -17,6 +18,9 @@ let initialSyncTimeoutId = null;
 let lastSyncAdjustTimestamp = 0;
 // 防抖 Timer
 let saveVolumeTimeout = null;
+
+// 用於區分單擊與雙擊的 Timer
+let clickTimeout = null;
 
 // 動態偏移補償 (針對手機延遲)
 // 結構: { filename: offsetMs } (offsetMs 單位為毫秒)
@@ -153,6 +157,11 @@ async function initializeApp() {
       config.activeFolderPath = normalizePath(path);
       saveConfig();
       generateTrackListFromConfig();
+    },
+    // 新增：允許 setting.js 即時設定跳轉秒數
+    setSkipSeconds: (seconds) => {
+      skipSeconds = seconds;
+      config.skipSeconds = seconds;
     }
   };
 
@@ -237,6 +246,9 @@ window.onPlaylistUpdated = function () {
   if (!config.activeFolderPath && currentActive) config.activeFolderPath = currentActive;
   if (config.showDebugInfo === undefined) config.showDebugInfo = debugSetting;
 
+  // 更新 skipSeconds
+  skipSeconds = config.skipSeconds || 5;
+
   // 將 Blob URL 填回 config
   config.folders.forEach(folder => {
     folder.tracks.forEach(t => {
@@ -267,6 +279,20 @@ window.onPlaylistUpdated = function () {
     }
   }
 };
+
+function showToast(message) {
+  const toast = document.getElementById('toast-notification');
+  if (!toast) return;
+  toast.innerText = message;
+  toast.classList.add('show');
+
+  // 如果之前有 timer 正在跑，清除它以重置時間
+  if (toast.hideTimeout) clearTimeout(toast.hideTimeout);
+
+  toast.hideTimeout = setTimeout(() => {
+    toast.classList.remove('show');
+  }, 2000);
+}
 
 function setUpUIEvents() {
   const folderInput = document.getElementById('folder-input');
@@ -302,10 +328,29 @@ function setUpUIEvents() {
 
   const nameEl = document.getElementById('music-name');
   nameEl.addEventListener('click', (e) => {
-    if (e.detail === 2) {
+    // 區分單擊與雙擊：利用延遲
+    if (clickTimeout) {
+      clearTimeout(clickTimeout);
+      clickTimeout = null;
+      // 這是雙擊 (跳轉邏輯)
       const rect = e.target.getBoundingClientRect();
       const x = e.clientX - rect.left;
       if (x > rect.width / 2) seekForward(); else seekBackward();
+    } else {
+      // 這是單擊 (複製邏輯)
+      clickTimeout = setTimeout(() => {
+        clickTimeout = null;
+        // 執行複製
+        const textToCopy = nameEl.innerText;
+        if (textToCopy && textToCopy !== '尚未載入歌曲 - 請選擇音樂資料夾或至設定新增資料夾') {
+          navigator.clipboard.writeText(textToCopy).then(() => {
+            showToast("已複製歌名 (Copied title)");
+          }).catch(err => {
+            console.error('Copy failed', err);
+            showToast("複製失敗");
+          });
+        }
+      }, 250); // 250ms 延遲等待確認是否為雙擊
     }
   });
 
@@ -883,14 +928,14 @@ function previousTrack() {
 }
 
 function seekForward() {
-  // 快進 5 秒
+  // 快進 5 秒 (使用動態的 skipSeconds)
   if (!audioElements.length) return;
   const newTime = Math.min(audioElements[0].duration || 0, audioElements[0].currentTime + skipSeconds);
   audioElements.forEach(a => a.currentTime = newTime);
   updateMediaSessionPositionState();
 }
 function seekBackward() {
-  // 快退 5 秒
+  // 快退 5 秒 (使用動態的 skipSeconds)
   if (!audioElements.length) return;
   const newTime = Math.max(0, audioElements[0].currentTime - skipSeconds);
   audioElements.forEach(a => a.currentTime = newTime);

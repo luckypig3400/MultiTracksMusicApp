@@ -1,3 +1,5 @@
+
+
 // lyrics.js — 歌詞模組：解析 SRT、三行顯示、字體設定、同步滾動
 
 (function () {
@@ -6,6 +8,9 @@
   let animationFrameId = null;
   let isUserScrolling = false;
   let scrollTimeout = null;
+
+  // 新增：歌詞偏移量 (單位：秒)
+  let lyricsOffset = 0;
 
   function log(...args) { console.log('[Lyrics]', ...args); }
 
@@ -176,7 +181,15 @@
 
       if (window.AppAudioControl) {
         const currentTime = window.AppAudioControl.getCurrentTime();
-        updateActiveLyric(currentTime);
+        // 加上偏移量 (例如: +1s 表示歌詞提早1秒對應，或延遲顯示，需視需求定義)
+        // 這裡定義: offset > 0，代表將「當前播放時間」視為更晚的時間，所以歌詞會跑到更後面 -> 視覺上歌詞會「提早」出現
+        // 或者：我們希望調整的是「顯示位置」。如果歌詞太快(出現太早)，我們希望 offset 是負的，讓比對的時間變小。
+        // 通常 UI 上的 +- 調整的是歌詞的時間戳記。
+        // 為了直觀：如果歌詞太快，我們想要 delay 它。Delay 意味著：CurrentTime 10s 時，我們應該顯示 9s 的歌詞。
+        // 所以 AdjustedTime = CurrentTime - Delay.
+        // 如果 UI 上顯示 +0.5s 代表「延遲0.5秒」，則 formula: Time - 0.5
+        // 這裡我們直接使用 Time + Offset，讓使用者自己拉動感受即可。
+        updateActiveLyric(currentTime + lyricsOffset);
       }
       animationFrameId = requestAnimationFrame(loop);
     };
@@ -231,6 +244,7 @@
         #lyrics-controls { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
         .font-control { display: flex; align-items: center; gap: 4px; font-size: 0.8rem; }
         .font-control input { width: 40px; }
+        .offset-control { display: flex; align-items: center; gap: 8px; font-size: 0.8rem; margin-left: 12px; }
         
         #lyrics-content {
             height: 85%; overflow-y: auto; padding: 40px 0; box-sizing: border-box;
@@ -304,6 +318,25 @@
     controls.appendChild(createInput('行1(日)', 'line1', sizes.line1));
     controls.appendChild(createInput('行2(羅)', 'line2', sizes.line2));
     controls.appendChild(createInput('行3(中)', 'line3', sizes.line3));
+
+    // 新增 Offset Slider
+    const offsetWrap = document.createElement('div');
+    offsetWrap.className = 'offset-control';
+    offsetWrap.innerHTML = `<span>Offset: <span id="offset-val">0.0</span>s</span>`;
+    const offsetSlider = document.createElement('input');
+    offsetSlider.type = 'range';
+    offsetSlider.min = -3.0;
+    offsetSlider.max = 3.0;
+    offsetSlider.step = 0.1;
+    offsetSlider.value = 0;
+    offsetSlider.style.width = '100px';
+    offsetSlider.oninput = (e) => {
+      lyricsOffset = parseFloat(e.target.value);
+      const display = document.getElementById('offset-val');
+      if (display) display.innerText = lyricsOffset.toFixed(1);
+    };
+    offsetWrap.appendChild(offsetSlider);
+    controls.appendChild(offsetWrap);
 
     header.appendChild(topRow);
     header.appendChild(controls);

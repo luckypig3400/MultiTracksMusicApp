@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
@@ -123,6 +124,26 @@
   /* 小的閃爍樣式 */
   .progress-flash { background-color: rgba(255,0,0,0.6) !important; transition: background-color 0.1s; }
   .hidden { display:none !important; }
+
+  /* Toast Notification */
+  #toast-notification {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background-color: rgba(0, 0, 0, 0.7);
+    color: white;
+    padding: 10px 20px;
+    border-radius: 20px;
+    font-size: 0.9rem;
+    z-index: 10005;
+    opacity: 0;
+    transition: opacity 0.3s ease-in-out;
+    pointer-events: none;
+  }
+  #toast-notification.show {
+    opacity: 1;
+  }
 </style>
 </head>
 <body>
@@ -168,6 +189,9 @@
       </div>
     </div>
   </div>
+
+  <!-- Toast Notification Element -->
+  <div id="toast-notification">已複製歌名 (Copied title)</div>
 
   <script src="app.js"></script>
   <script src="playlist.js"></script>
