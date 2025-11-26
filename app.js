@@ -69,6 +69,7 @@ function readConfig() {
     ],
     skipSeconds: 5,
     lyricsFontSize: { line1: 14, line2: 20, line3: 16 },
+    lyricsDisplayOffset: 0, // 新增：全域歌詞顯示位置偏移 (視覺)
     showDebugInfo: false
   };
 }
@@ -162,6 +163,31 @@ async function initializeApp() {
     setSkipSeconds: (seconds) => {
       skipSeconds = seconds;
       config.skipSeconds = seconds;
+    },
+    // 新增：儲存單曲歌詞時間偏移 (秒數)
+    saveTrackLyricsOffset: (baseName, offset) => {
+      // 1. 更新 config
+      config.folders.forEach(folder => {
+        if (folder.tracks) {
+          const t = folder.tracks.find(tr => tr.filename === baseName);
+          if (t) t.lyricsTimeOffset = offset;
+        }
+      });
+      // 2. 更新當前播放清單 (若是當前歌曲)
+      if (window.tracks) {
+        const t = window.tracks.find(tr => tr.baseName === baseName);
+        if (t) t.lyricsTimeOffset = offset;
+      }
+      saveConfig();
+    },
+    // 新增：儲存全域歌詞顯示偏移 (行數)
+    saveLyricsDisplayOffset: (offset) => {
+      config.lyricsDisplayOffset = offset;
+      saveConfig();
+    },
+    // 新增：取得全域歌詞顯示偏移
+    getLyricsDisplayOffset: () => {
+      return config.lyricsDisplayOffset || 0;
     }
   };
 
@@ -255,6 +281,10 @@ window.onPlaylistUpdated = function () {
       const oldT = oldTracksMap.get(t.filename);
       if (oldT) {
         t.lyricsFile = oldT.lyricsFile;
+        // 保留可能尚未儲存到 config 但存在於 runtime 的 lyricsTimeOffset
+        if (t.lyricsTimeOffset === undefined && oldT.lyricsTimeOffset !== undefined) {
+          t.lyricsTimeOffset = oldT.lyricsTimeOffset;
+        }
         t.audioTracks.forEach(at => {
           const oldAt = oldT.audioTracks.find(oa => oa.filename === at.filename);
           if (oldAt) at.blobUrl = oldAt.blobUrl;
@@ -383,6 +413,7 @@ function handleFolderSelect(fileList) {
 // 【BUG 修復】：scanFiles 必須在有新檔案時，強制更新 activeFolderPath
 // 【修改】：保留 relPathXOrder 排序參數
 // 【修改】：修復檔案移動後音量重置問題 (Bug 1)，以及Active Folder重置問題 (Bug 2)
+// 【新增】：保留 lyricsTimeOffset 參數
 function scanFiles(files) {
   const validAudioExt = ['mp3', 'wav', 'flac', 'm4a', 'aac', 'ogg'];
   const folderMaps = {}; // 存放本次掃描到的檔案結構
@@ -424,6 +455,7 @@ function scanFiles(files) {
     let oldVolume = 85;
     let oldMute = false;
     let oldOrders = {}; // 用來存 relPathXOrder
+    let oldLyricsTimeOffset = 0; // 用來存單曲歌詞偏移
 
     for (let folderCfg of config.folders) {
       const matchTrack = folderCfg.tracks?.find(t => t.filename === mainName);
@@ -434,6 +466,11 @@ function scanFiles(files) {
             oldOrders[key] = matchTrack[key];
           }
         });
+
+        // 保留歌詞時間偏移
+        if (matchTrack.lyricsTimeOffset !== undefined) {
+          oldLyricsTimeOffset = matchTrack.lyricsTimeOffset;
+        }
 
         // 【Bug 1 修復】：這裡原本是比對 relPath，現在改為比對 filename
         // 只要檔名相同 (例如 "1_001.迷星叫_(Bass).mp3")，就視為同一首歌的該音軌，
@@ -449,7 +486,7 @@ function scanFiles(files) {
     }
 
     const blobUrl = URL.createObjectURL(file);
-    const entry = { filename: name, relPath, blobUrl, volume: oldVolume, mute: oldMute, suffix, oldOrders };
+    const entry = { filename: name, relPath, blobUrl, volume: oldVolume, mute: oldMute, suffix, oldOrders, oldLyricsTimeOffset };
 
     const folderKey = normalizePath(folder || ''); // 統一路徑格式
 
@@ -488,6 +525,7 @@ function scanFiles(files) {
       // 取得第一筆 entry 裡面的 oldOrders (因為同一首歌的 oldOrders 應該一樣)
       const firstEntry = map[mainName][0];
       const recoveredOrders = firstEntry.oldOrders || {};
+      const recoveredLyricsOffset = firstEntry.oldLyricsTimeOffset || 0;
 
       const audioTracks = map[mainName].map(t => ({
         filename: t.filename,
@@ -523,6 +561,7 @@ function scanFiles(files) {
         filename: mainName,
         audioTracks,
         lyricsFile: matchedSrt,
+        lyricsTimeOffset: recoveredLyricsOffset, // 寫回單曲歌詞偏移
         ...recoveredOrders // 寫回 relPathXOrder
       };
     };
@@ -623,7 +662,8 @@ function generateTrackListFromConfig() {
             uiTrack: {
               baseName: t.filename,
               audioTracks: t.audioTracks.map(at => ({ ...at })),
-              lyricsFile: t.lyricsFile
+              lyricsFile: t.lyricsFile,
+              lyricsTimeOffset: t.lyricsTimeOffset || 0 // 確保 UI track 也有這個屬性
             }
           });
         }

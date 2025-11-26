@@ -10,7 +10,9 @@
   let scrollTimeout = null;
 
   // 新增：歌詞偏移量 (單位：秒)
-  let lyricsOffset = 0;
+  let lyricsTimeOffset = 0;
+  // 新增：顯示位置偏移 (單位：行，視覺位置)
+  let displayOffset = 0;
 
   function log(...args) { console.log('[Lyrics]', ...args); }
 
@@ -97,6 +99,21 @@
       return;
     }
 
+    // 初始化 Time Offset (從設定讀取)
+    lyricsTimeOffset = currentTrack.lyricsTimeOffset || 0;
+    const timeInput = document.getElementById('time-offset-input');
+    if (timeInput) timeInput.value = lyricsTimeOffset;
+
+    // 初始化 Display Offset (從全域設定讀取)
+    if (window.AppAudioControl && window.AppAudioControl.getLyricsDisplayOffset) {
+      displayOffset = window.AppAudioControl.getLyricsDisplayOffset();
+    }
+    const displaySlider = document.getElementById('display-offset-slider');
+    if (displaySlider) {
+      displaySlider.value = displayOffset;
+      document.getElementById('display-offset-val').innerText = (displayOffset > 0 ? '+' : '') + displayOffset;
+    }
+
     try {
       const response = await fetch(currentTrack.lyricsFile);
       const text = await response.text();
@@ -181,15 +198,17 @@
 
       if (window.AppAudioControl) {
         const currentTime = window.AppAudioControl.getCurrentTime();
-        // 加上偏移量 (例如: +1s 表示歌詞提早1秒對應，或延遲顯示，需視需求定義)
-        // 這裡定義: offset > 0，代表將「當前播放時間」視為更晚的時間，所以歌詞會跑到更後面 -> 視覺上歌詞會「提早」出現
-        // 或者：我們希望調整的是「顯示位置」。如果歌詞太快(出現太早)，我們希望 offset 是負的，讓比對的時間變小。
-        // 通常 UI 上的 +- 調整的是歌詞的時間戳記。
-        // 為了直觀：如果歌詞太快，我們想要 delay 它。Delay 意味著：CurrentTime 10s 時，我們應該顯示 9s 的歌詞。
-        // 所以 AdjustedTime = CurrentTime - Delay.
-        // 如果 UI 上顯示 +0.5s 代表「延遲0.5秒」，則 formula: Time - 0.5
-        // 這裡我們直接使用 Time + Offset，讓使用者自己拉動感受即可。
-        updateActiveLyric(currentTime + lyricsOffset);
+        // Time Offset: 調整比對時間。
+        // 如果使用者輸入 +1s (延遲顯示)，代表 當前時間 10s 時，應該顯示 9s 的歌詞。
+        // 也就是 邏輯時間 = 實際時間 - Offset。
+        // 但通常使用者直覺是：歌詞太慢了(字幕比聲音慢)，我要他快一點(-1s)；歌詞太快了(字幕比聲音快)，我要他慢一點(+1s)。
+        // 這裡實作邏輯： MatchTime = CurrentTime + offset. 
+        // 假設 Offset = -1. MatchTime = 9s. 程式會去找 9s 的歌詞。
+        // 所以如果現在是 10s, 顯示的是 9s 的歌詞 -> 字幕變慢了 (Delay).
+        // 如果 Offset = +1. MatchTime = 11s. 顯示 11s 的歌詞 -> 字幕變快了 (Advance).
+        // 為了符合一般「調整同步秒數」直覺 (通常 + 是延遲, - 是提前)，我們這裡定義：
+        // 實際比對時間 = currentTime - lyricsTimeOffset
+        updateActiveLyric(currentTime - lyricsTimeOffset);
       }
       animationFrameId = requestAnimationFrame(loop);
     };
@@ -218,9 +237,27 @@
     if (activeIndex !== -1) {
       const blocks = document.querySelectorAll('.lyric-block');
       const target = blocks[activeIndex];
+
+      // 高亮當前行
       if (target && !target.classList.contains('active')) {
         target.classList.add('active');
+      }
+
+      // 捲動邏輯 (包含 Display Offset)
+      // 如果 Display Offset 是 +1，我們希望當前行看起來在「上一段」(較上方)
+      // 這意味著我們需要捲動到比較「下面」的元素，讓當前行被推上去。
+      // 所以 Target Scroll Element = ActiveIndex + DisplayOffset
+
+      const scrollIndex = activeIndex + parseInt(displayOffset);
+      const scrollTarget = blocks[scrollIndex]; // 可能 undefined
+
+      if (scrollTarget) {
         if (!isUserScrolling) {
+          scrollTarget.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      } else {
+        // 邊界處理：如果 scrollTarget 超出範圍，就只捲動到 active
+        if (target && !isUserScrolling) {
           target.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }
       }
@@ -238,16 +275,23 @@
     const style = document.createElement('style');
     style.textContent = `
         #lyrics-header {
-            height: 15%; min-height: 80px; display: flex; flex-direction: column; 
+            min-height: 80px; display: flex; flex-direction: column; 
             justify-content: center; padding: 8px 12px; border-bottom: 1px solid #eee;
+            gap: 8px;
         }
-        #lyrics-controls { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+        #lyrics-controls { display: flex; flex-direction: column; gap: 8px; width: 100%; }
+        
+        .control-row {
+            display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+        }
+        
         .font-control { display: flex; align-items: center; gap: 4px; font-size: 0.8rem; }
         .font-control input { width: 40px; }
-        .offset-control { display: flex; align-items: center; gap: 8px; font-size: 0.8rem; margin-left: 12px; }
+        
+        .offset-control { display: flex; align-items: center; gap: 8px; font-size: 0.85rem; }
         
         #lyrics-content {
-            height: 85%; overflow-y: auto; padding: 40px 0; box-sizing: border-box;
+            flex: 1; overflow-y: auto; padding: 40px 0; box-sizing: border-box;
             text-align: center; scroll-behavior: smooth;
         }
         .lyric-block {
@@ -276,7 +320,7 @@
     const topRow = document.createElement('div');
     topRow.style.display = 'flex';
     topRow.style.justifyContent = 'space-between';
-    topRow.style.marginBottom = '8px';
+    topRow.style.alignItems = 'center';
 
     const title = document.createElement('div');
     title.innerText = '歌詞 (Lyrics)';
@@ -315,28 +359,69 @@
       return wrap;
     };
 
-    controls.appendChild(createInput('行1(日)', 'line1', sizes.line1));
-    controls.appendChild(createInput('行2(羅)', 'line2', sizes.line2));
-    controls.appendChild(createInput('行3(中)', 'line3', sizes.line3));
+    // Row 1: Font Size
+    const row1 = document.createElement('div');
+    row1.className = 'control-row';
+    row1.appendChild(createInput('行1(日)', 'line1', sizes.line1));
+    row1.appendChild(createInput('行2(羅)', 'line2', sizes.line2));
+    row1.appendChild(createInput('行3(中)', 'line3', sizes.line3));
 
-    // 新增 Offset Slider
-    const offsetWrap = document.createElement('div');
-    offsetWrap.className = 'offset-control';
-    offsetWrap.innerHTML = `<span>Offset: <span id="offset-val">0.0</span>s</span>`;
-    const offsetSlider = document.createElement('input');
-    offsetSlider.type = 'range';
-    offsetSlider.min = -3.0;
-    offsetSlider.max = 3.0;
-    offsetSlider.step = 0.1;
-    offsetSlider.value = 0;
-    offsetSlider.style.width = '100px';
-    offsetSlider.oninput = (e) => {
-      lyricsOffset = parseFloat(e.target.value);
-      const display = document.getElementById('offset-val');
-      if (display) display.innerText = lyricsOffset.toFixed(1);
+    // Row 2: Visual Offset Slider
+    const row2 = document.createElement('div');
+    row2.className = 'control-row';
+    const displayOffsetWrap = document.createElement('div');
+    displayOffsetWrap.className = 'offset-control';
+    displayOffsetWrap.innerHTML = `<span>播放中歌詞顯示位置調整: <b id="display-offset-val">0</b></span>`;
+
+    const displaySlider = document.createElement('input');
+    displaySlider.id = 'display-offset-slider';
+    displaySlider.type = 'range';
+    displaySlider.min = -3;
+    displaySlider.max = 3;
+    displaySlider.step = 1;
+    displaySlider.value = 0;
+    displaySlider.style.width = '120px';
+    displaySlider.oninput = (e) => {
+      displayOffset = parseInt(e.target.value);
+      const valStr = (displayOffset > 0 ? '+' : '') + displayOffset;
+      document.getElementById('display-offset-val').innerText = valStr;
+      // 儲存全域設定
+      if (window.AppAudioControl && window.AppAudioControl.saveLyricsDisplayOffset) {
+        window.AppAudioControl.saveLyricsDisplayOffset(displayOffset);
+      }
     };
-    offsetWrap.appendChild(offsetSlider);
-    controls.appendChild(offsetWrap);
+    displayOffsetWrap.appendChild(displaySlider);
+    row2.appendChild(displayOffsetWrap);
+
+    // Row 3: Time Sync Input
+    const row3 = document.createElement('div');
+    row3.className = 'control-row';
+    const timeOffsetWrap = document.createElement('div');
+    timeOffsetWrap.className = 'offset-control';
+    timeOffsetWrap.innerHTML = `<span>歌詞同步秒數調整(s):</span>`;
+
+    const timeInput = document.createElement('input');
+    timeInput.id = 'time-offset-input';
+    timeInput.type = 'number';
+    timeInput.step = 0.1;
+    timeInput.style.width = '60px';
+    timeInput.value = 0;
+    timeInput.onchange = (e) => {
+      lyricsTimeOffset = parseFloat(e.target.value) || 0;
+      // 儲存單曲設定
+      if (window.AppAudioControl && window.AppAudioControl.saveTrackLyricsOffset && window.tracks) {
+        const track = window.tracks[window.currentTrackIndex];
+        if (track) {
+          window.AppAudioControl.saveTrackLyricsOffset(track.baseName, lyricsTimeOffset);
+        }
+      }
+    };
+    timeOffsetWrap.appendChild(timeInput);
+    row3.appendChild(timeOffsetWrap);
+
+    controls.appendChild(row1);
+    controls.appendChild(row2);
+    controls.appendChild(row3);
 
     header.appendChild(topRow);
     header.appendChild(controls);
