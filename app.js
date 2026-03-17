@@ -49,17 +49,7 @@ function calcFolderDepth(rootPath, currentPath) {
 }
 
 function readConfig() {
-  const raw = localStorage.getItem('config');
-  if (raw) {
-    try {
-      const cfg = JSON.parse(raw);
-      return cfg;
-    } catch (e) {
-      console.error("readConfig JSON 錯誤", e);
-    }
-  }
-  return {
-    folders: [],
+  const defaultCfg = {
     filenameRules: [
       { pattern: "\\(Bass\\)$", name: "Bass" },
       { pattern: "\\(Drums\\)$", name: "Drums" },
@@ -69,15 +59,40 @@ function readConfig() {
     ],
     skipSeconds: 5,
     lyricsFontSize: { line1: 14, line2: 20, line3: 16 },
-    lyricsDisplayOffset: 0, // 新增：全域歌詞顯示位置偏移 (視覺)
-    showDebugInfo: false
+    lyricsDisplayOffset: 0,
+    showDebugInfo: false,
+    activeFolderPath: "",
+    appTheme: localStorage.getItem('appTheme') || "light",
+    folders: []
   };
+
+  const raw = localStorage.getItem('config');
+  if (raw) {
+    try {
+      const cfg = JSON.parse(raw);
+      // 合併預設值，避免新使用者的設定檔殘缺
+      return { ...defaultCfg, ...cfg };
+    } catch (e) {
+      console.error("readConfig JSON 錯誤", e);
+    }
+  }
+  return defaultCfg;
 }
 
 function saveConfig() {
   try {
     // 為了避免 localStorage 儲存過多垃圾，不將 Blob URL 存入 (因重整後無效)
     // 但我們會儲存字體大小等設定
+    // 將 folders 移到最下方
+    const orderedCfg = {};
+    for (const key in config) {
+      if (key !== 'folders') {
+        orderedCfg[key] = config[key];
+      }
+    }
+    orderedCfg.folders = config.folders || [];
+    config = orderedCfg;
+
     localStorage.setItem('config', JSON.stringify(config));
   } catch (e) {
     console.error("saveConfig 錯誤", e);

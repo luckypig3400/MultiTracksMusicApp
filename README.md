@@ -613,3 +613,60 @@ Ultimate Vocal Remover，然後播放的清單就會變回這個父資料夾本�
 Oop!你並沒有編寫到檔案喔，請記得到FileExplorer內找到對應的檔案編寫程式碼
 請你仔細瀏覽本專案內所有程式碼(app.js,index.html,lyrics.js,playlist.js,setting.js)碼，並仔細思考後再開始寫程式碼，
 請完整輸出你所有有修改的程式碼 !!!請勿刪除任何一行註解，也不要壓縮程式碼!!! 超重要!!! 謝謝~
+
+### 請Gemini 3.1 Pro預覽版修復字幕讀取的Bug，以及動態字幕顯示的bug，以及未曾載入過範例音樂，就無法正常播放本機檔案的BUG
+#### 1st 
+`上傳本專案所有程式碼文件到Code->FileExplorer內，排除vscode和git設定以及 需求.txt`
+有發現我的SRT字幕一定要是Unix LF才會被正確顯示，若是Windows CR LF則會全部顯示空白(但是檔名有符合規則一樣會配對成功，只是內容顯示不出來)
+請修正這個問題讓不管是Unix LF還是Windows cr lf格式的SRT文件全部都可以被正常顯示
+對了，當動態字幕播放到最後幾行時，會發現不再捲動，而且最後一行通常會跑到顯示範圍外，
+或許在最後一行歌詞新增7行空白行(無法被點選跳轉播放進度，僅用來幫助最後幾行歌詞滾動到正確顯示位置)
+
+最後我還有發現首次使用的人他的設定檔有殘缺導致功能無法正常使用，下面是預設寫入的設定檔
+{
+  "appTheme": "light"
+}
+他如果直接載入自己的資料夾目錄的話根本會無法使用，直到他曾經載入過範本音樂才會多出下面這些設定
+{
+  "folders": [
+    載入的範本音樂和自己的音樂資料夾目錄...
+  ],
+  "filenameRules": [
+    {
+      "pattern": "\\(Bass\\)$",
+      "name": "Bass"
+    },
+    {
+      "pattern": "\\(Drums\\)$",
+      "name": "Drums"
+    },
+    {
+      "pattern": "\\(Instrumental\\)$",
+      "name": "Instrumental"
+    },
+    {
+      "pattern": "\\(Other\\)$",
+      "name": "Other"
+    },
+    {
+      "pattern": "\\(Vocals\\)$",
+      "name": "Vocals"
+    }
+  ],
+  "skipSeconds": 5,
+  "lyricsFontSize": {
+    "line1": 14,
+    "line2": 20,
+    "line3": 16
+  },
+  "lyricsDisplayOffset": 0,
+  "showDebugInfo": false,
+  "activeFolderPath": "Sample Music",
+  "appTheme": "light"
+}
+也是要知道這些設定被載入之後，這個使用者後續才能正常的使用自己的音樂目錄來播放，
+所以請你把這些必要的設定內容，也都初始化給新user，對了請把folders固定放在最下方，
+就算是現有設定檔已經存在的使用者，當他點設定頁面時也會幫忙把folders，排放在最下方，
+也就是放在appTheme的下方，這樣其他設定檔資訊會比較方便被看到
+請你仔細瀏覽本專案內所有程式碼碼，並仔細思考後再開始寫程式碼，
+請盡可能地不要刪除任何註解，也不要壓縮程式碼!!! 超重要!!! 謝謝~

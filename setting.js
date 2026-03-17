@@ -63,9 +63,36 @@ window.ThemeManager = (() => {
     // 同步更新 config 中的主題設定
     try {
       const raw = localStorage.getItem('config');
-      const cfg = raw ? JSON.parse(raw) : {};
+      let cfg = raw ? JSON.parse(raw) : {};
+
+      // 合併預設值
+      const defaultCfg = {
+        filenameRules: [
+          { pattern: "\\(Bass\\)$", name: "Bass" },
+          { pattern: "\\(Drums\\)$", name: "Drums" },
+          { pattern: "\\(Instrumental\\)$", name: "Instrumental" },
+          { pattern: "\\(Other\\)$", name: "Other" },
+          { pattern: "\\(Vocals\\)$", name: "Vocals" }
+        ],
+        skipSeconds: 5,
+        lyricsFontSize: { line1: 14, line2: 20, line3: 16 },
+        lyricsDisplayOffset: 0,
+        showDebugInfo: false,
+        activeFolderPath: "",
+        appTheme: next,
+        folders: []
+      };
+      cfg = { ...defaultCfg, ...cfg };
       cfg.appTheme = next;
-      localStorage.setItem('config', JSON.stringify(cfg));
+
+      // 確保 folders 在最下方
+      const orderedCfg = {};
+      for (const key in cfg) {
+        if (key !== 'folders') orderedCfg[key] = cfg[key];
+      }
+      orderedCfg.folders = cfg.folders || [];
+
+      localStorage.setItem('config', JSON.stringify(orderedCfg));
     } catch (e) {
       console.warn('更新 config.appTheme 時發生錯誤', e);
     }
@@ -136,9 +163,37 @@ window.SettingsUI = (() => {
   }
 
   function toggleDebugInfo() {
-    const cfg = JSON.parse(localStorage.getItem('config') || '{}');
+    let cfg = JSON.parse(localStorage.getItem('config') || '{}');
+
+    // 合併預設值
+    const defaultCfg = {
+      filenameRules: [
+        { pattern: "\\(Bass\\)$", name: "Bass" },
+        { pattern: "\\(Drums\\)$", name: "Drums" },
+        { pattern: "\\(Instrumental\\)$", name: "Instrumental" },
+        { pattern: "\\(Other\\)$", name: "Other" },
+        { pattern: "\\(Vocals\\)$", name: "Vocals" }
+      ],
+      skipSeconds: 5,
+      lyricsFontSize: { line1: 14, line2: 20, line3: 16 },
+      lyricsDisplayOffset: 0,
+      showDebugInfo: false,
+      activeFolderPath: "",
+      appTheme: localStorage.getItem('appTheme') || "light",
+      folders: []
+    };
+    cfg = { ...defaultCfg, ...cfg };
+
     cfg.showDebugInfo = !cfg.showDebugInfo;
-    localStorage.setItem('config', JSON.stringify(cfg));
+
+    // 確保 folders 在最下方
+    const orderedCfg = {};
+    for (const key in cfg) {
+      if (key !== 'folders') orderedCfg[key] = cfg[key];
+    }
+    orderedCfg.folders = cfg.folders || [];
+
+    localStorage.setItem('config', JSON.stringify(orderedCfg));
     // 通知 App 更新 config 並立即顯示/隱藏
     if (window.onPlaylistUpdated) window.onPlaylistUpdated();
     updateDebugButtonState();
@@ -325,20 +380,75 @@ window.SettingsUI = (() => {
     if (!textarea) return;
     const raw = localStorage.getItem('config') || '{}';
     try {
-      const cfg = JSON.parse(raw);
+      let cfg = JSON.parse(raw);
+
+      // 合併預設值
+      const defaultCfg = {
+        filenameRules: [
+          { pattern: "\\(Bass\\)$", name: "Bass" },
+          { pattern: "\\(Drums\\)$", name: "Drums" },
+          { pattern: "\\(Instrumental\\)$", name: "Instrumental" },
+          { pattern: "\\(Other\\)$", name: "Other" },
+          { pattern: "\\(Vocals\\)$", name: "Vocals" }
+        ],
+        skipSeconds: 5,
+        lyricsFontSize: { line1: 14, line2: 20, line3: 16 },
+        lyricsDisplayOffset: 0,
+        showDebugInfo: false,
+        activeFolderPath: "",
+        appTheme: localStorage.getItem('appTheme') || "light",
+        folders: []
+      };
+      cfg = { ...defaultCfg, ...cfg };
+
       // 確保 config 內包含 appTheme
       if (!cfg.appTheme) {
         cfg.appTheme = localStorage.getItem('appTheme') || 'light';
       }
-      textarea.value = JSON.stringify(cfg, null, 2);
+
+      // 確保 folders 在最下方
+      const orderedCfg = {};
+      for (const key in cfg) {
+        if (key !== 'folders') orderedCfg[key] = cfg[key];
+      }
+      orderedCfg.folders = cfg.folders || [];
+
+      textarea.value = JSON.stringify(orderedCfg, null, 2);
     } catch (e) { textarea.value = raw; }
   }
 
   function exportConfig() {
     try {
-      const cfg = JSON.parse(localStorage.getItem('config') || '{}');
+      let cfg = JSON.parse(localStorage.getItem('config') || '{}');
+
+      // 合併預設值
+      const defaultCfg = {
+        filenameRules: [
+          { pattern: "\\(Bass\\)$", name: "Bass" },
+          { pattern: "\\(Drums\\)$", name: "Drums" },
+          { pattern: "\\(Instrumental\\)$", name: "Instrumental" },
+          { pattern: "\\(Other\\)$", name: "Other" },
+          { pattern: "\\(Vocals\\)$", name: "Vocals" }
+        ],
+        skipSeconds: 5,
+        lyricsFontSize: { line1: 14, line2: 20, line3: 16 },
+        lyricsDisplayOffset: 0,
+        showDebugInfo: false,
+        activeFolderPath: "",
+        appTheme: localStorage.getItem('appTheme') || "light",
+        folders: []
+      };
+      cfg = { ...defaultCfg, ...cfg };
       cfg.appTheme = localStorage.getItem('appTheme') || cfg.appTheme || 'light';
-      const blob = new Blob([JSON.stringify(cfg, null, 2)], { type: 'application/json' });
+
+      // 確保 folders 在最下方
+      const orderedCfg = {};
+      for (const key in cfg) {
+        if (key !== 'folders') orderedCfg[key] = cfg[key];
+      }
+      orderedCfg.folders = cfg.folders || [];
+
+      const blob = new Blob([JSON.stringify(orderedCfg, null, 2)], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -354,9 +464,37 @@ window.SettingsUI = (() => {
     const reader = new FileReader();
     reader.onload = evt => {
       try {
-        const obj = JSON.parse(evt.target.result);
+        let obj = JSON.parse(evt.target.result);
+
+        // 合併預設值
+        const defaultCfg = {
+          filenameRules: [
+            { pattern: "\\(Bass\\)$", name: "Bass" },
+            { pattern: "\\(Drums\\)$", name: "Drums" },
+            { pattern: "\\(Instrumental\\)$", name: "Instrumental" },
+            { pattern: "\\(Other\\)$", name: "Other" },
+            { pattern: "\\(Vocals\\)$", name: "Vocals" }
+          ],
+          skipSeconds: 5,
+          lyricsFontSize: { line1: 14, line2: 20, line3: 16 },
+          lyricsDisplayOffset: 0,
+          showDebugInfo: false,
+          activeFolderPath: "",
+          appTheme: localStorage.getItem('appTheme') || "light",
+          folders: []
+        };
+        obj = { ...defaultCfg, ...obj };
+
         if (obj.appTheme) localStorage.setItem('appTheme', obj.appTheme);
-        localStorage.setItem('config', JSON.stringify(obj));
+
+        // 確保 folders 在最下方
+        const orderedCfg = {};
+        for (const key in obj) {
+          if (key !== 'folders') orderedCfg[key] = obj[key];
+        }
+        orderedCfg.folders = obj.folders || [];
+
+        localStorage.setItem('config', JSON.stringify(orderedCfg));
         loadConfigToTextarea();
         ThemeManager.loadAndApplyTheme(document.getElementById('btn-theme-toggle'));
         alert('設定已載入並儲存到 localStorage');

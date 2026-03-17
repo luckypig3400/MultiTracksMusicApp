@@ -63,6 +63,8 @@
 
   // 解析 SRT 字串
   function parseSRT(srtContent) {
+    // 統一換行符號，將 Windows 的 \r\n 轉換為 \n，避免正則表達式匹配失敗
+    srtContent = srtContent.replace(/\r\n/g, '\n');
     const pattern = /(\d+)\n(\d{2}:\d{2}:\d{2},\d{3}) --> (\d{2}:\d{2}:\d{2},\d{3})\n([\s\S]*?)(?=\n\n|\n*$)/g;
     const result = [];
     let match;
@@ -188,6 +190,17 @@
 
       container.appendChild(block);
     });
+
+    // 新增 7 行空白行，幫助最後幾行歌詞能滾動到正確的顯示位置
+    for (let i = 0; i < 7; i++) {
+      const blankBlock = document.createElement('div');
+      blankBlock.className = 'lyric-block blank-block';
+      blankBlock.style.height = '60px'; // 設定適當高度
+      blankBlock.style.cursor = 'default';
+      // 移除 hover 效果與點擊事件
+      blankBlock.onmouseenter = () => blankBlock.style.background = 'transparent';
+      container.appendChild(blankBlock);
+    }
   }
 
   function startSyncLoop() {
@@ -298,7 +311,7 @@
             padding: 12px 20px; cursor: pointer; transition: all 0.2s;
             border-radius: 12px; margin: 4px 16px;
         }
-        .lyric-block:hover { background: rgba(0,0,0,0.05); }
+        .lyric-block:not(.blank-block):hover { background: rgba(0,0,0,0.05); }
         
         /* 播放中樣式 */
         .lyric-block.active { 
@@ -309,7 +322,7 @@
         /* Dark Mode */
         .vscode-dark #lyrics-modal { background-color: #1e1e1e; color: #d4d4d4; }
         .vscode-dark #lyrics-header { border-bottom: 1px solid #333; }
-        .vscode-dark .lyric-block:hover { background: rgba(255,255,255,0.05); }
+        .vscode-dark .lyric-block:not(.blank-block):hover { background: rgba(255,255,255,0.05); }
         .vscode-dark .lyric-block.active { background: rgba(255, 215, 0, 0.08); }
     `;
     modal.appendChild(style);
