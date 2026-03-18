@@ -38,7 +38,7 @@
     if (!modal) buildModal();
 
     // 套用主題
-    const theme = localStorage.getItem('appTheme') || 'light';
+    const theme = safeStorage.getItem('appTheme') || 'light';
     if (theme === 'dark') modal.classList.add('vscode-dark');
     else modal.classList.remove('vscode-dark');
 

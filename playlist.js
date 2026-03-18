@@ -12,16 +12,16 @@
   function log(...args) { console.log('[Playlist]', ...args); }
 
   function getConfig() {
-    // 優先使用 App 記憶體中的 config (因為有 Blob URL)，若無則讀 localStorage
+    // 優先使用 App 記憶體中的 config (因為有 Blob URL)，若無則讀 safeStorage
     if (window.AppAudioControl) return window.AppAudioControl.getConfig();
-    const raw = localStorage.getItem('config');
+    const raw = safeStorage.getItem('config');
     return raw ? JSON.parse(raw) : { folders: [] };
   }
 
   function saveConfig(cfg) {
     // 通知 App 保存
     if (window.AppAudioControl) window.AppAudioControl.saveConfig();
-    else localStorage.setItem('config', JSON.stringify(cfg));
+    else safeStorage.setItem('config', JSON.stringify(cfg));
   }
 
   function loadTracksFromStorage() {
@@ -96,8 +96,8 @@
     log('openPlaylist');
     if (!modal) buildModal();
 
-    // 同步主題：開啟時檢查 localStorage，若為 dark 則加上 class
-    const theme = localStorage.getItem('appTheme') || 'light';
+    // 同步主題：開啟時檢查 safeStorage，若為 dark 則加上 class
+    const theme = safeStorage.getItem('appTheme') || 'light';
     if (theme === 'dark') modal.classList.add('vscode-dark');
     else modal.classList.remove('vscode-dark');
 

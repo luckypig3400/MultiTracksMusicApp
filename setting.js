@@ -56,13 +56,13 @@ window.ThemeManager = (() => {
   }
 
   function toggleTheme(btnTheme = null) {
-    const current = localStorage.getItem('appTheme') || 'light';
+    const current = safeStorage.getItem('appTheme') || 'light';
     const next = current === 'light' ? 'dark' : 'light';
-    localStorage.setItem('appTheme', next);
+    safeStorage.setItem('appTheme', next);
 
     // 同步更新 config 中的主題設定
     try {
-      const raw = localStorage.getItem('config');
+      const raw = safeStorage.getItem('config');
       let cfg = raw ? JSON.parse(raw) : {};
 
       // 合併預設值
@@ -92,7 +92,7 @@ window.ThemeManager = (() => {
       }
       orderedCfg.folders = cfg.folders || [];
 
-      localStorage.setItem('config', JSON.stringify(orderedCfg));
+      safeStorage.setItem('config', JSON.stringify(orderedCfg));
     } catch (e) {
       console.warn('更新 config.appTheme 時發生錯誤', e);
     }
@@ -103,13 +103,13 @@ window.ThemeManager = (() => {
   function loadAndApplyTheme(btnTheme = null) {
     let savedTheme = 'light';
     try {
-      const raw = localStorage.getItem('config');
+      const raw = safeStorage.getItem('config');
       const cfg = raw ? JSON.parse(raw) : {};
-      savedTheme = cfg.appTheme || localStorage.getItem('appTheme') || 'light';
+      savedTheme = cfg.appTheme || safeStorage.getItem('appTheme') || 'light';
     } catch {
-      savedTheme = localStorage.getItem('appTheme') || 'light';
+      savedTheme = safeStorage.getItem('appTheme') || 'light';
     }
-    localStorage.setItem('appTheme', savedTheme);
+    safeStorage.setItem('appTheme', savedTheme);
     applyTheme(savedTheme, btnTheme);
   }
   return { applyTheme, toggleTheme, loadAndApplyTheme };
@@ -125,7 +125,7 @@ window.SettingsUI = (() => {
     modal.style.display = 'flex';
 
     // 確保開啟時主題正確
-    const currentTheme = localStorage.getItem('appTheme') || 'light';
+    const currentTheme = safeStorage.getItem('appTheme') || 'light';
     const btnTheme = document.getElementById('btn-theme-toggle');
     ThemeManager.applyTheme(currentTheme, btnTheme);
 
@@ -145,7 +145,7 @@ window.SettingsUI = (() => {
     const btn = document.getElementById('btn-debug-toggle');
     if (!btn) return;
     // 讀取目前 config
-    const cfg = JSON.parse(localStorage.getItem('config') || '{}');
+    const cfg = JSON.parse(safeStorage.getItem('config') || '{}');
     if (cfg.showDebugInfo) {
       btn.innerHTML = '除錯訊息: 開';
       btn.style.color = '#2e7d32'; // green
@@ -158,12 +158,12 @@ window.SettingsUI = (() => {
   function updateSeekInputState() {
     const input = document.getElementById('input-seek-seconds');
     if (!input) return;
-    const cfg = JSON.parse(localStorage.getItem('config') || '{}');
+    const cfg = JSON.parse(safeStorage.getItem('config') || '{}');
     input.value = cfg.skipSeconds || 5;
   }
 
   function toggleDebugInfo() {
-    let cfg = JSON.parse(localStorage.getItem('config') || '{}');
+    let cfg = JSON.parse(safeStorage.getItem('config') || '{}');
 
     // 合併預設值
     const defaultCfg = {
@@ -179,7 +179,7 @@ window.SettingsUI = (() => {
       lyricsDisplayOffset: 0,
       showDebugInfo: false,
       activeFolderPath: "",
-      appTheme: localStorage.getItem('appTheme') || "light",
+      appTheme: safeStorage.getItem('appTheme') || "light",
       folders: []
     };
     cfg = { ...defaultCfg, ...cfg };
@@ -193,7 +193,7 @@ window.SettingsUI = (() => {
     }
     orderedCfg.folders = cfg.folders || [];
 
-    localStorage.setItem('config', JSON.stringify(orderedCfg));
+    safeStorage.setItem('config', JSON.stringify(orderedCfg));
     // 通知 App 更新 config 並立即顯示/隱藏
     if (window.onPlaylistUpdated) window.onPlaylistUpdated();
     updateDebugButtonState();
@@ -281,9 +281,9 @@ window.SettingsUI = (() => {
     seekInput.addEventListener('input', (e) => {
       const val = parseInt(e.target.value);
       if (val > 0) {
-        const cfg = JSON.parse(localStorage.getItem('config') || '{}');
+        const cfg = JSON.parse(safeStorage.getItem('config') || '{}');
         cfg.skipSeconds = val;
-        localStorage.setItem('config', JSON.stringify(cfg));
+        safeStorage.setItem('config', JSON.stringify(cfg));
 
         // 即時更新 App 變數
         if (window.AppAudioControl) {
@@ -356,7 +356,7 @@ window.SettingsUI = (() => {
   function removeSampleMusic() {
     if (!confirm('確定要移除範本音樂資料嗎？\n(將會移除「Sample Music」資料夾)')) return;
     try {
-      const config = JSON.parse(localStorage.getItem('config') || '{}');
+      const config = JSON.parse(safeStorage.getItem('config') || '{}');
       if (!config.folders) {
         alert("設定檔中無資料。");
         return;
@@ -366,7 +366,7 @@ window.SettingsUI = (() => {
       const originalLength = config.folders.length;
       config.folders = config.folders.filter(f => f.path !== "Sample Music");
       if (config.folders.length < originalLength) {
-        localStorage.setItem('config', JSON.stringify(config));
+        safeStorage.setItem('config', JSON.stringify(config));
         loadConfigToTextarea();
         // 觸發 App 更新
         if (window.onPlaylistUpdated) window.onPlaylistUpdated();
@@ -378,7 +378,7 @@ window.SettingsUI = (() => {
   function loadConfigToTextarea() {
     const textarea = document.getElementById('config-text');
     if (!textarea) return;
-    const raw = localStorage.getItem('config') || '{}';
+    const raw = safeStorage.getItem('config') || '{}';
     try {
       let cfg = JSON.parse(raw);
 
@@ -396,14 +396,14 @@ window.SettingsUI = (() => {
         lyricsDisplayOffset: 0,
         showDebugInfo: false,
         activeFolderPath: "",
-        appTheme: localStorage.getItem('appTheme') || "light",
+        appTheme: safeStorage.getItem('appTheme') || "light",
         folders: []
       };
       cfg = { ...defaultCfg, ...cfg };
 
       // 確保 config 內包含 appTheme
       if (!cfg.appTheme) {
-        cfg.appTheme = localStorage.getItem('appTheme') || 'light';
+        cfg.appTheme = safeStorage.getItem('appTheme') || 'light';
       }
 
       // 確保 folders 在最下方
@@ -419,7 +419,7 @@ window.SettingsUI = (() => {
 
   function exportConfig() {
     try {
-      let cfg = JSON.parse(localStorage.getItem('config') || '{}');
+      let cfg = JSON.parse(safeStorage.getItem('config') || '{}');
 
       // 合併預設值
       const defaultCfg = {
@@ -435,11 +435,11 @@ window.SettingsUI = (() => {
         lyricsDisplayOffset: 0,
         showDebugInfo: false,
         activeFolderPath: "",
-        appTheme: localStorage.getItem('appTheme') || "light",
+        appTheme: safeStorage.getItem('appTheme') || "light",
         folders: []
       };
       cfg = { ...defaultCfg, ...cfg };
-      cfg.appTheme = localStorage.getItem('appTheme') || cfg.appTheme || 'light';
+      cfg.appTheme = safeStorage.getItem('appTheme') || cfg.appTheme || 'light';
 
       // 確保 folders 在最下方
       const orderedCfg = {};
@@ -480,12 +480,12 @@ window.SettingsUI = (() => {
           lyricsDisplayOffset: 0,
           showDebugInfo: false,
           activeFolderPath: "",
-          appTheme: localStorage.getItem('appTheme') || "light",
+          appTheme: safeStorage.getItem('appTheme') || "light",
           folders: []
         };
         obj = { ...defaultCfg, ...obj };
 
-        if (obj.appTheme) localStorage.setItem('appTheme', obj.appTheme);
+        if (obj.appTheme) safeStorage.setItem('appTheme', obj.appTheme);
 
         // 確保 folders 在最下方
         const orderedCfg = {};
@@ -494,10 +494,10 @@ window.SettingsUI = (() => {
         }
         orderedCfg.folders = obj.folders || [];
 
-        localStorage.setItem('config', JSON.stringify(orderedCfg));
+        safeStorage.setItem('config', JSON.stringify(orderedCfg));
         loadConfigToTextarea();
         ThemeManager.loadAndApplyTheme(document.getElementById('btn-theme-toggle'));
-        alert('設定已載入並儲存到 localStorage');
+        alert('設定已載入並儲存到 safeStorage');
 
         // 選擇性：通知 App 更新 (如果需要即時套用設定變更)
         // 但為了保險起見，通常載入設定後使用者會傾向重整，
@@ -513,8 +513,8 @@ window.SettingsUI = (() => {
 
   function clearConfig() {
     if (confirm('確定要清除設定嗎？')) {
-      localStorage.removeItem('config');
-      localStorage.removeItem('appTheme');
+      safeStorage.removeItem('config');
+      safeStorage.removeItem('appTheme');
       loadConfigToTextarea();
       ThemeManager.applyTheme('light', document.getElementById('btn-theme-toggle'));
     }

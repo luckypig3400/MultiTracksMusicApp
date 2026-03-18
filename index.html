@@ -106,17 +106,23 @@
 
   /* folder chooser popup */
   #folder-chooser {
-    position: absolute;
+    position: fixed;
     z-index: 9999;
-    left:50%;
-    top:50%;
-    transform:translate(-50%,-50%);
-    background:white;
-    padding:16px;
-    border-radius:8px;
-    box-shadow:0 8px 24px rgba(0,0,0,0.12);
-    display:none;
-    min-width:320px;
+    left: 0;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    margin: auto;
+    background: white;
+    padding: 20px;
+    border-radius: 12px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+    display: none;
+    width: 85vw;
+    max-width: 400px;
+    height: fit-content;
+    max-height: 80vh;
+    overflow-y: auto;
   }
   #folder-chooser p { margin:0 0 8px 0; }
   #folder-chooser input[type=file] { width:100%; }
@@ -185,15 +191,11 @@
       <p>首次使用請選擇一或多個音樂資料夾（會掃描資料夾內音訊檔案與歌詞）</p>
       <p class="hint-text">【如果沒有UVR5音訊檔案的話，可以到設定頁面載入範例音訊檔案，以及歌詞檔案】</p>
       <div style="margin-bottom: 12px;">
-        <label style="display: block; margin-bottom: 4px; font-weight: bold;">選擇資料夾 (電腦版):</label>
+        <label style="display: block; margin-bottom: 4px; font-weight: bold;">選擇資料夾:</label>
         <input type="file" id="folder-input" webkitdirectory directory multiple />
       </div>
-      <div style="margin-bottom: 8px;">
-        <label style="display: block; margin-bottom: 4px; font-weight: bold;">選擇多個檔案 (手機/平板版):</label>
-        <input type="file" id="files-input" multiple accept="audio/*,.srt" />
-      </div>
-      <div style="margin-top:8px; text-align:right;">
-        <button id="folder-ok">關閉</button>
+      <div style="margin-top:20px; text-align:right;">
+        <button id="folder-ok" style="padding: 10px 24px; font-size: 1rem; background: #2196F3; color: white; border: none; border-radius: 6px; cursor: pointer;">關閉</button>
       </div>
     </div>
   </div>
