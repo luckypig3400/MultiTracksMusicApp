@@ -46,12 +46,12 @@ window.ThemeManager = (() => {
       document.documentElement.classList.add('vscode-dark');
       if (app) app.classList.add('vscode-dark');
       if (modal) modal.classList.add('vscode-dark');
-      if (btnTheme) btnTheme.innerHTML = '<i class="fa-solid fa-sun"></i>';
+      if (btnTheme) btnTheme.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle;"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>';
     } else {
       document.documentElement.classList.remove('vscode-dark');
       if (app) app.classList.remove('vscode-dark');
       if (modal) modal.classList.remove('vscode-dark');
-      if (btnTheme) btnTheme.innerHTML = '<i class="fa-solid fa-moon"></i>';
+      if (btnTheme) btnTheme.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle;"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>';
     }
   }
 
@@ -238,7 +238,7 @@ window.SettingsUI = (() => {
     const btnSave = createButton('btn-save-file', '儲存成檔案', exportConfig);
     const btnLoad = createButton('btn-load-file', '載入自檔案', () => document.getElementById('file-input').click());
     const btnClear = createButton('btn-clear', '清除', clearConfig);
-    const btnTheme = createButton('btn-theme-toggle', '<i class="fa-solid fa-moon"></i>', () => ThemeManager.toggleTheme(btnTheme));
+    const btnTheme = createButton('btn-theme-toggle', '<svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle;"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>', () => ThemeManager.toggleTheme(btnTheme));
     btnTheme.title = "切換主題";
 
     // 【新增】除錯訊息開關

@@ -341,10 +341,14 @@ function showToast(message) {
 
 function setUpUIEvents() {
   const folderInput = document.getElementById('folder-input');
+  const filesInput = document.getElementById('files-input');
   const folderChooser = document.getElementById('folder-chooser');
   const folderOk = document.getElementById('folder-ok');
 
   folderInput.addEventListener('change', (e) => handleFolderSelect(e.target.files));
+  if (filesInput) {
+    filesInput.addEventListener('change', (e) => handleFolderSelect(e.target.files));
+  }
   folderOk.addEventListener('click', () => folderChooser.style.display = 'none');
 
   const btnSettings = document.getElementById('btn-settings');
@@ -363,11 +367,11 @@ function setUpUIEvents() {
   document.getElementById('btn-prev').addEventListener('click', previousTrack);
   document.getElementById('btn-random').addEventListener('click', () => {
     isRandom = !isRandom;
-    document.getElementById('btn-random').innerHTML = isRandom ? '<i class="fa-solid fa-shuffle" style="color: gold;">' : '<i class="fa-solid fa-shuffle">';
+    document.getElementById('btn-random').innerHTML = isRandom ? '<svg viewBox="0 0 24 24" width="16" height="16" stroke="gold" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle;"><polyline points="16 3 21 3 21 8"></polyline><line x1="4" y1="20" x2="21" y2="3"></line><polyline points="21 16 21 21 16 21"></polyline><line x1="15" y1="15" x2="21" y2="21"></line><line x1="4" y1="4" x2="9" y2="9"></line></svg>' : '<svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle;"><polyline points="16 3 21 3 21 8"></polyline><line x1="4" y1="20" x2="21" y2="3"></line><polyline points="21 16 21 21 16 21"></polyline><line x1="15" y1="15" x2="21" y2="21"></line><line x1="4" y1="4" x2="9" y2="9"></line></svg>';
   });
   document.getElementById('btn-repeat').addEventListener('click', () => {
     repeatMode = (repeatMode + 1) % 3;
-    const text = repeatMode === 0 ? '<i class="fa-solid fa-repeat"></i>' : (repeatMode === 1 ? '<i class="fa-solid fa-repeat" style="color: gold;">&nbsp;1</i>' : '<i class="fa-solid fa-repeat" style="color: gold;">A</i>');
+    const text = repeatMode === 0 ? '<svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle;"><polyline points="17 1 21 5 17 9"></polyline><path d="M3 11V9a4 4 0 0 1 4-4h14"></path><polyline points="7 23 3 19 7 15"></polyline><path d="M21 13v2a4 4 0 0 1-4 4H3"></path></svg>' : (repeatMode === 1 ? '<svg viewBox="0 0 24 24" width="16" height="16" stroke="gold" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle;"><polyline points="17 1 21 5 17 9"></polyline><path d="M3 11V9a4 4 0 0 1 4-4h14"></path><polyline points="7 23 3 19 7 15"></polyline><path d="M21 13v2a4 4 0 0 1-4 4H3"></path></svg><span style="color: gold; font-size: 12px; margin-left: 2px;">1</span>' : '<svg viewBox="0 0 24 24" width="16" height="16" stroke="gold" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle;"><polyline points="17 1 21 5 17 9"></polyline><path d="M3 11V9a4 4 0 0 1 4-4h14"></path><polyline points="7 23 3 19 7 15"></polyline><path d="M21 13v2a4 4 0 0 1-4 4H3"></path></svg><span style="color: gold; font-size: 12px; margin-left: 2px;">A</span>');
     document.getElementById('btn-repeat').innerHTML = text;
   });
 
@@ -954,7 +958,7 @@ function playPause() {
   const first = audioElements[0];
   if (first.paused) {
     audioElements.forEach(a => a.play().catch(e => console.warn(e)));
-    document.getElementById('btn-play').innerHTML = '<i class="fa-solid fa-pause"></i>';
+    document.getElementById('btn-play').innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle;"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>';
 
     // 【新增】更新通知列狀態
     navigator.mediaSession.playbackState = 'playing';
@@ -963,7 +967,7 @@ function playPause() {
     initialSyncTimeoutId = setTimeout(() => { syncCheckAndFix(); syncIntervalId = setInterval(() => { if (!audioElements[0].paused) syncCheckAndFix(); }, 5000); }, 200);
   } else {
     audioElements.forEach(a => a.pause());
-    document.getElementById('btn-play').innerHTML = '<i class="fa-solid fa-play"></i>';
+    document.getElementById('btn-play').innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle;"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>';
 
     // 【新增】更新通知列狀態
     navigator.mediaSession.playbackState = 'paused';

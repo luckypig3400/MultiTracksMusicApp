@@ -5,7 +5,8 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>多音軌音樂播放器</title>
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.1/css/all.min.css">
+<!-- <link rel="icon" href="data:,"> -->
+
 <style>
   :root { font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans"; }
   html,body { height:100%; margin:0; background:#fafafa; color:#111; }
@@ -162,17 +163,17 @@
     <div id="controls">
       <!-- 第一列：播放控制 -->
       <div class="control-row">
-        <button id="btn-random" title="隨機"><i class="fa-solid fa-shuffle"></i></button>
-        <button id="btn-prev" title="上一首"><i class="fa-solid fa-backward-step"></i></button>
-        <button id="btn-play" title="播放"><i class="fa-solid fa-pause"></i></button>
-        <button id="btn-next" title="下一首"><i class="fa-solid fa-forward-step"></i></button>
-        <button id="btn-repeat" title="重複"><i class="fa-solid fa-repeat"></i></button>
+        <button id="btn-random" title="隨機"><svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle;"><polyline points="16 3 21 3 21 8"></polyline><line x1="4" y1="20" x2="21" y2="3"></line><polyline points="21 16 21 21 16 21"></polyline><line x1="15" y1="15" x2="21" y2="21"></line><line x1="4" y1="4" x2="9" y2="9"></line></svg></button>
+        <button id="btn-prev" title="上一首"><svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle;"><polygon points="19 20 9 12 19 4 19 20"></polygon><line x1="5" y1="19" x2="5" y2="5"></line></svg></button>
+        <button id="btn-play" title="播放"><svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle;"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg></button>
+        <button id="btn-next" title="下一首"><svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle;"><polygon points="5 4 15 12 5 20 5 4"></polygon><line x1="19" y1="5" x2="19" y2="19"></line></svg></button>
+        <button id="btn-repeat" title="重複"><svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle;"><polyline points="17 1 21 5 17 9"></polyline><path d="M3 11V9a4 4 0 0 1 4-4h14"></path><polyline points="7 23 3 19 7 15"></polyline><path d="M21 13v2a4 4 0 0 1-4 4H3"></path></svg></button>
       </div>
       <!-- 第二列：功能按鈕 -->
       <div class="control-row">
-        <button id="btn-playlist" title="播放清單"><i class="fa-solid fa-list-ul"></i> 播放清單</button>
+        <button id="btn-playlist" title="播放清單"><svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 4px;"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg> 播放清單</button>
         <button id="btn-lyrics" title="歌詞">歌詞(Lyrics)</button>
-        <button id="btn-settings" title="設定"><i class="fa-solid fa-gear"></i> 設定</button>
+        <button id="btn-settings" title="設定"><svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 4px;"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg> 設定</button>
       </div>
     </div>
 
@@ -183,7 +184,14 @@
     <div id="folder-chooser" role="dialog" aria-modal="true">
       <p>首次使用請選擇一或多個音樂資料夾（會掃描資料夾內音訊檔案與歌詞）</p>
       <p class="hint-text">【如果沒有UVR5音訊檔案的話，可以到設定頁面載入範例音訊檔案，以及歌詞檔案】</p>
-      <input type="file" id="folder-input" webkitdirectory directory multiple />
+      <div style="margin-bottom: 12px;">
+        <label style="display: block; margin-bottom: 4px; font-weight: bold;">選擇資料夾 (電腦版):</label>
+        <input type="file" id="folder-input" webkitdirectory directory multiple />
+      </div>
+      <div style="margin-bottom: 8px;">
+        <label style="display: block; margin-bottom: 4px; font-weight: bold;">選擇多個檔案 (手機/平板版):</label>
+        <input type="file" id="files-input" multiple accept="audio/*,.srt" />
+      </div>
       <div style="margin-top:8px; text-align:right;">
         <button id="folder-ok">關閉</button>
       </div>

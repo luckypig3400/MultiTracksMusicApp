@@ -196,12 +196,12 @@
     btnSort.onclick = () => { sortAsc = !sortAsc; sortList(); persistTracks(); syncAppTracks(); renderList(); };
 
     const btnShuffle = document.createElement('button');
-    btnShuffle.innerHTML = '<i class="fa-solid fa-shuffle"></i>';
+    btnShuffle.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle;"><polyline points="16 3 21 3 21 8"></polyline><line x1="4" y1="20" x2="21" y2="3"></line><polyline points="21 16 21 21 16 21"></polyline><line x1="15" y1="15" x2="21" y2="21"></line><line x1="4" y1="4" x2="9" y2="9"></line></svg>';
     btnShuffle.onclick = () => { shuffleList(); persistTracks(); syncAppTracks(); renderList(); };
 
     // 新增：切換資料夾按鈕
     const btnSwitchFolder = document.createElement('button');
-    btnSwitchFolder.innerHTML = '<i class="fa-solid fa-left-right"></i><i class="fa-solid fa-folder-open"></i>';
+    btnSwitchFolder.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle;"><polyline points="16 3 21 8 16 13"></polyline><line x1="21" y1="8" x2="3" y2="8"></line><polyline points="8 21 3 16 8 11"></polyline><line x1="3" y1="16" x2="21" y2="16"></line></svg><svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-left: 4px;"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>';
     btnSwitchFolder.title = "切換資料夾";
     btnSwitchFolder.onclick = showFolderSelectionModal;
 
@@ -210,7 +210,7 @@
     leftGroup.appendChild(btnSwitchFolder);
 
     const btnClose = document.createElement('button');
-    btnClose.innerHTML = '<i class="fa-solid fa-arrow-right-from-bracket"></i>'; // 改圖示
+    btnClose.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle;"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>'; // 改圖示
     btnClose.title = "儲存並關閉";
     btnClose.onclick = () => { persistTracks(); syncAppTracks(); closePlaylist(); };
 
@@ -314,9 +314,9 @@
     const arrow = document.createElement('div');
     arrow.className = 'folder-arrow';
     if (hasSubFolders) {
-      arrow.innerHTML = '<i class="fa-solid fa-caret-right"></i>';
+      arrow.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle;"><polygon points="9 18 15 12 9 6 9 18"></polygon></svg>';
     } else {
-      arrow.innerHTML = '<i class="fa-solid fa-music" style="font-size:0.8em; opacity:0.5;"></i>';
+      arrow.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; opacity: 0.5;"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle></svg>';
     }
     row.appendChild(arrow);
 
@@ -371,7 +371,7 @@
       const allRow = document.createElement('div');
       allRow.className = 'folder-row';
       allRow.style.paddingLeft = '36px'; // 縮排比一般子項目多一點
-      allRow.innerHTML = '<i class="fa-solid fa-list-check" style="color:#666;"></i> <span style="margin-left:6px">All (包含子資料夾)</span>';
+      allRow.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" stroke="#666" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle;"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><polyline points="3 6 4 7 6 5"></polyline><polyline points="3 12 4 13 6 11"></polyline><polyline points="3 18 4 19 6 17"></polyline></svg> <span style="margin-left:6px">All (包含子資料夾)</span>';
 
       if (isActive) {
         allRow.classList.add('active');

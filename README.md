@@ -615,7 +615,7 @@ Oop!你並沒有編寫到檔案喔，請記得到FileExplorer內找到對應的�
 請完整輸出你所有有修改的程式碼 !!!請勿刪除任何一行註解，也不要壓縮程式碼!!! 超重要!!! 謝謝~
 
 ### 請Gemini 3.1 Pro預覽版修復字幕讀取的Bug，以及動態字幕顯示的bug，以及未曾載入過範例音樂，就無法正常播放本機檔案的BUG
-#### 1st 
+#### 1st Perfect!!!!!
 `上傳本專案所有程式碼文件到Code->FileExplorer內，排除vscode和git設定以及 需求.txt`
 有發現我的SRT字幕一定要是Unix LF才會被正確顯示，若是Windows CR LF則會全部顯示空白(但是檔名有符合規則一樣會配對成功，只是內容顯示不出來)
 請修正這個問題讓不管是Unix LF還是Windows cr lf格式的SRT文件全部都可以被正常顯示
@@ -670,3 +670,38 @@ Oop!你並沒有編寫到檔案喔，請記得到FileExplorer內找到對應的�
 也就是放在appTheme的下方，這樣其他設定檔資訊會比較方便被看到
 請你仔細瀏覽本專案內所有程式碼碼，並仔細思考後再開始寫程式碼，
 請盡可能地不要刪除任何註解，也不要壓縮程式碼!!! 超重要!!! 謝謝~
+
+### 請Gemini 3.1 Pro預覽版把CDN的JS、CSS甚至是icon都下載回來，讓這個網頁變成離線可執行
+#### 1st
+希望把fa-icon、所有用到的cdn css、js都下載回來，這樣我在手機上的Chrome等瀏覽器上，
+只要下載這個頁面，離線時就可正常使用
+請提供完整的連結讓我去下載檔案回來然後告訴我我放到專案的哪裡，或是放在與index.html相同的根目錄下
+只是下載回來的檔案檔名要取名叫做什麼請務必詳細告訴我，當然如果你有辦法做到的話，
+就直接把這些CDN的檔案全部都直接下載回來這個專案內，
+如果有需要修改程式碼的話，
+請你仔細瀏覽本專案內所有程式碼碼，並仔細思考後再開始寫程式碼，
+請盡可能地不要刪除任何註解，也不要壓縮程式碼!!! 超重要!!! 謝謝~
+
+#### 2nd oops
+我發現會不行，會有這些Warnings而且那些icons也無法正確顯示
+app.js:145 initializeApp start
+app.js:210 初始化：等待使用者重新選擇資料夾以更新 Blob URL
+app.js:212 initializeApp done
+index.html:1 Failed to decode downloaded font: http://127.0.0.1:5501/assets/fontawesome/webfonts/fa-solid-900.woff2
+index.html:1 OTS parsing error: Size of decompressed WOFF 2.0 is less than compressed size
+index.html:1 Failed to decode downloaded font: http://127.0.0.1:5501/assets/fontawesome/webfonts/fa-solid-900.woff2
+index.html:1 OTS parsing error: Size of decompressed WOFF 2.0 is less than compressed size
+index.html:1 Failed to decode downloaded font: http://127.0.0.1:5501/assets/fontawesome/webfonts/fa-solid-900.woff2
+index.html:1 OTS parsing error: Size of decompressed WOFF 2.0 is less than compressed size
+g9nhm28jb13afdh.js:2 [Violation] Permissions policy violation: unload is not allowed in this document.
+(anonymous) @ g9nhm28jb13afdh.js:2
+(anonymous) @ g9nhm28jb13afdh.js:2
+(anonymous) @ g9nhm28jb13afdh.js:2
+favicon.ico:1  GET http://127.0.0.1:5501/favicon.ico 404 (Not Found)
+
+對了我的index.HTML有做一些修改，因為我在本地部署不需要用到typescript和vite
+
+#### 3rd nice
+測試後發現Android Chrome下載後開啟離線網頁一樣無法順利運作，
+然後設定介面和資料夾切換選單里有使用到的icons都消失了你應該是漏掉沒改成離線SVG
+
